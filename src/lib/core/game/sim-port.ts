@@ -16,6 +16,8 @@ export interface ISimPort {
 	enqueueTask(username: string, intent: TaskIntent): TaskAck;
 	/** Таймаут/выход: оборвать действие и очистить поднос. */
 	cancelOrder(username: string, reason: "timeout" | "leave"): void;
+	/** Запечатать блюдо (`!next`): очистить поднос, персонаж остаётся. */
+	clearTray(username: string): void;
 	/** Забрать персонажа (дисконнект). */
 	despawn(username: string): void;
 	/** Чтение: `!menu`, снапшот оверлея. */

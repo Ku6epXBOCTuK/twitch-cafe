@@ -62,6 +62,11 @@ class RecordingPort implements ISimPort {
 		this.cancels.push(reason);
 	}
 
+	clearTray(username: string): void {
+		this.trayLayers = [];
+		void username;
+	}
+
 	despawn(): void {}
 
 	getTraySnapshot(username: string) {
@@ -230,6 +235,77 @@ describe("SessionManager: таймаут", () => {
 		expect(orderB).not.toBe(orderA);
 		expect(port.startOrders).toEqual([orderA, orderB]);
 		expect(port.cancels).toEqual(["timeout"]);
+	});
+});
+
+describe("SessionManager: nextDish", () => {
+	function twoDishOrder(): IOrder {
+		const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
+		const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
+		return {
+			id: "order-two",
+			items: [
+				{ item: burger, state: ORDER_ITEM_STATE.PENDING },
+				{ item: cola, state: ORDER_ITEM_STATE.PENDING },
+			],
+			customer: { id: "normal", name: "Обычный", strictness: 0.5 },
+			timeLimit: 90_000,
+			createdAt: new Date(0),
+			status: ORDER_STATUS.PENDING,
+		};
+	}
+
+	function setupTwoDish() {
+		const port = new RecordingPort();
+		const sm = new SessionManager(twoDishOrder);
+		sm.attachPort(port);
+		port.attach(sm);
+		sm.incomingOrders.start();
+		return { port, sm };
+	}
+
+	it("запечатывает блюдо: снапшот в sealed, поднос очищен, индекс растёт", () => {
+		const { port, sm } = setupTwoDish();
+		takeOrder(sm, "alice");
+
+		port.trayLayers = BURGER_IDS; // собран бургер
+		expect(sm.nextDish("alice")).toEqual({ ok: true });
+		expect(port.getTraySnapshot("alice")?.layers).toEqual([]); // поднос очищен
+		expect(sm.getSealedDishes("alice")).toHaveLength(1);
+		expect(sm.getSealedDishes("alice")[0].layers).toEqual(BURGER_IDS);
+
+		// второе блюдо — последнее: last_item
+		expect(sm.nextDish("alice")).toEqual({ ok: false, reason: "last_item" });
+	});
+
+	it("tray_empty: нечего запечатывать на пустом подносе", () => {
+		const { sm } = setupTwoDish();
+		takeOrder(sm, "alice");
+		expect(sm.nextDish("alice")).toEqual({ ok: false, reason: "tray_empty" });
+	});
+
+	it("no_order: нет сессии или заказ уже закрыт", () => {
+		const { sm } = setup();
+		expect(sm.nextDish("alice")).toEqual({ ok: false, reason: "no_order" });
+
+		const { sm: sm2 } = setupTwoDish();
+		takeOrder(sm2, "alice");
+		sm2.serve("alice"); // пустой поднос — штраф, заказ COMPLETED
+		expect(sm2.nextDish("alice")).toEqual({ ok: false, reason: "no_order" });
+	});
+
+	it("serve после next: пер-dish оценка, бургер+кола = perfect", () => {
+		const { port, sm } = setupTwoDish();
+		takeOrder(sm, "alice");
+
+		port.trayLayers = BURGER_IDS;
+		expect(sm.nextDish("alice")).toEqual({ ok: true });
+		port.trayLayers = ["cola"];
+
+		const ack = sm.serve("alice");
+		expect(ack).toEqual({ ok: true });
+		expect(sm.getLastResult("alice")?.verdict).toBe("perfect");
+		expect(sm.getXp("alice")).toBe(50);
 	});
 });
 

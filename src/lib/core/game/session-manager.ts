@@ -13,10 +13,21 @@ import { IncomingOrders } from "./incoming-orders";
 export type TakeOrderResult =
 	{ ok: true; order: IOrder } | { ok: false; reason: "busy" | "empty_slot" };
 
+export type NextDishResult =
+	| { ok: true }
+	| {
+			ok: false;
+			reason: "no_order" | "last_item" | "tray_empty";
+	  };
+
 export interface PlayerSession {
 	username: string;
 	order: IOrder;
 	xp: number;
+	/** Индекс блюда, которое сейчас собирается на подносе. */
+	currentItemIndex: number;
+	/** Снапшоты запечатанных `!next`-ом блюд. */
+	sealed: ITraySnapshot[];
 	/** lastResult — вердикт последнего serve, для ответа в чат. */
 	lastResult: AssessmentResult | null;
 	timer: ReturnType<typeof setTimeout> | null;
@@ -67,11 +78,13 @@ export class SessionManager implements ISimEvents {
 
 		const order = taken.order;
 		const session: PlayerSession = existing
-			? { ...existing, order }
+			? { ...existing, order, currentItemIndex: 0, sealed: [] }
 			: {
 					username,
 					order,
 					xp: 0,
+					currentItemIndex: 0,
+					sealed: [],
 					lastResult: null,
 					timer: null,
 					lastServedAt: null,
@@ -114,6 +127,37 @@ export class SessionManager implements ISimEvents {
 		);
 	}
 
+	/**
+	 * `!next`: запечатать текущее блюдо — снапшот подноса в sealed,
+	 * поднос очищается, переходим к следующему блюду заказа.
+	 */
+	nextDish(username: string): NextDishResult {
+		const session = this.sessions.get(username);
+		if (!session || session.order.status !== ORDER_STATUS.PENDING) {
+			return { ok: false, reason: "no_order" };
+		}
+		if (session.currentItemIndex >= session.order.items.length - 1) {
+			return { ok: false, reason: "last_item" };
+		}
+		const snapshot = this.port?.getTraySnapshot(username);
+		if (!snapshot || snapshot.layers.length === 0) {
+			return { ok: false, reason: "tray_empty" };
+		}
+
+		session.sealed.push({
+			...snapshot,
+			frozenAt: Date.now(),
+			layers: [...snapshot.layers],
+		});
+		session.currentItemIndex++;
+		this.port?.clearTray(username);
+		return { ok: true };
+	}
+
+	getSealedDishes(username: string): ITraySnapshot[] {
+		return this.sessions.get(username)?.sealed ?? [];
+	}
+
 	getTraySnapshot(username: string): ITraySnapshot | undefined {
 		return this.port?.getTraySnapshot(username);
 	}
@@ -142,7 +186,10 @@ export class SessionManager implements ISimEvents {
 
 		order.status = ORDER_STATUS.COMPLETED;
 		session.lastServedAt = tray.frozenAt;
-		const result = OrderValidator.assessOrder(tray, order);
+		const sealed = session.sealed;
+		const current =
+			session.currentItemIndex < order.items.length - 1 ? null : tray;
+		const result = OrderValidator.assessOrderDishes(sealed, current, order);
 		session.lastResult = result;
 		session.xp += result.xpDelta;
 	}

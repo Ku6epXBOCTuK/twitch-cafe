@@ -117,24 +117,36 @@ function assessItem(
 }
 
 export class OrderValidator {
-	static assessOrder(snapshot: ITraySnapshot, order: IOrder): AssessmentResult {
+	/**
+	 * Dishes-модель: запечатанные блюда (sealed) оцениваются против
+	 * items[0..len-2], текущий поднос (current) — против последнего блюда.
+	 */
+	static assessOrderDishes(
+		sealed: ITraySnapshot[],
+		current: ITraySnapshot | null,
+		order: IOrder,
+	): AssessmentResult {
 		const strictness = order.customer.strictness;
-		const layers = snapshot.layers;
 
 		if (order.items.length === 0) {
 			return {
 				rating: 0,
 				verdict: "awful",
 				missing: [],
-				extra: layers,
+				extra: [],
 				orderIssues: [],
 				xpDelta: 0,
 			};
 		}
 
-		const assessments = order.items.map((oi) =>
-			assessItem(oi.item, layers, strictness),
-		);
+		const dishCount = order.items.length;
+		const assessments: ItemAssessment[] = [];
+		for (let i = 0; i < dishCount; i++) {
+			const layers =
+				i < dishCount - 1 ? (sealed[i]?.layers ?? []) : (current?.layers ?? []);
+			assessments.push(assessItem(order.items[i].item, layers, strictness));
+		}
+
 		const rating =
 			assessments.reduce((sum, a) => sum + a.rating, 0) / assessments.length;
 

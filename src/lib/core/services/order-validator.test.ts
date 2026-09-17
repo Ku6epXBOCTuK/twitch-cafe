@@ -27,13 +27,14 @@ function makeOrder(items: IMenuItem[], strictness = 0.5): IOrder {
 	};
 }
 
-function makeSnapshot(layers: string[]): ITraySnapshot {
-	return { username: "viewer", layers, frozenAt: 0 };
+function makeSnapshot(layers: string[], username = "viewer"): ITraySnapshot {
+	return { username, layers, frozenAt: 0 };
 }
 
-describe("OrderValidator: бургер", () => {
+describe("OrderValidator: бургер (единственное блюдо на current)", () => {
 	it("идеальная сборка — rating 1, perfect, без замечаний", () => {
-		const result = OrderValidator.assessOrder(
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot([
 				INGREDIENTS.bunBottom.id,
 				INGREDIENTS.patty.id,
@@ -50,7 +51,8 @@ describe("OrderValidator: бургер", () => {
 	});
 
 	it("недостача — штраф и список missing", () => {
-		const result = OrderValidator.assessOrder(
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot([
 				INGREDIENTS.bunBottom.id,
 				INGREDIENTS.patty.id,
@@ -63,7 +65,8 @@ describe("OrderValidator: бургер", () => {
 	});
 
 	it("лишний ингредиент — штраф за extra", () => {
-		const result = OrderValidator.assessOrder(
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot([
 				INGREDIENTS.bunBottom.id,
 				INGREDIENTS.patty.id,
@@ -79,7 +82,8 @@ describe("OrderValidator: бургер", () => {
 	});
 
 	it("перепутаны слои начинки — штраф за порядок", () => {
-		const result = OrderValidator.assessOrder(
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot([
 				INGREDIENTS.bunBottom.id,
 				INGREDIENTS.cheese.id,
@@ -94,8 +98,9 @@ describe("OrderValidator: бургер", () => {
 });
 
 describe("OrderValidator: напиток", () => {
-	it("пустой поднос — rating 0, awful, −XP", () => {
-		const result = OrderValidator.assessOrder(
+	it("пустой current — rating 0, awful, −XP", () => {
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot([]),
 			makeOrder([cola]),
 		);
@@ -106,12 +111,61 @@ describe("OrderValidator: напиток", () => {
 	});
 
 	it("нужная кола на подносе — идеал", () => {
-		const result = OrderValidator.assessOrder(
+		const result = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot(["cola"]),
 			makeOrder([cola]),
 		);
 		expect(result.rating).toBe(1);
 		expect(result.extra).toEqual([]);
+	});
+});
+
+describe("OrderValidator: dishes-модель (sealed + current)", () => {
+	it("бургер запечатан + кола на подносе = perfect по двум блюдам", () => {
+		const sealedBurger = makeSnapshot([
+			INGREDIENTS.bunBottom.id,
+			INGREDIENTS.patty.id,
+			INGREDIENTS.cheese.id,
+			INGREDIENTS.bunTop.id,
+		]);
+		const result = OrderValidator.assessOrderDishes(
+			[sealedBurger],
+			makeSnapshot(["cola"]),
+			makeOrder([burger, cola]),
+		);
+		expect(result.rating).toBe(1);
+		expect(result.verdict).toBe("perfect");
+	});
+
+	it("burger запечатан плохо, кола идеальна — среднее", () => {
+		const sealedBurger = makeSnapshot([
+			INGREDIENTS.bunBottom.id,
+			INGREDIENTS.patty.id,
+			INGREDIENTS.bunTop.id,
+		]); // нет сыра → 0.8125
+		const result = OrderValidator.assessOrderDishes(
+			[sealedBurger],
+			makeSnapshot(["cola"]),
+			makeOrder([burger, cola]),
+		);
+		expect(result.rating).toBeCloseTo((0.8125 + 1) / 2, 4);
+	});
+
+	it("current null (serve без последнего блюда) — последнее блюдо провалено", () => {
+		const sealedBurger = makeSnapshot([
+			INGREDIENTS.bunBottom.id,
+			INGREDIENTS.patty.id,
+			INGREDIENTS.cheese.id,
+			INGREDIENTS.bunTop.id,
+		]);
+		const result = OrderValidator.assessOrderDishes(
+			[sealedBurger],
+			null,
+			makeOrder([burger, cola]),
+		);
+		expect(result.rating).toBeCloseTo(0.5, 4);
+		expect(result.missing).toContain("cola");
 	});
 });
 
@@ -122,11 +176,13 @@ describe("OrderValidator: строгость клиента", () => {
 			INGREDIENTS.patty.id,
 			INGREDIENTS.bunTop.id,
 		];
-		const picky = OrderValidator.assessOrder(
+		const picky = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot(layers),
 			makeOrder([burger], CUSTOMER_PRESETS[2].strictness),
 		);
-		const easy = OrderValidator.assessOrder(
+		const easy = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot(layers),
 			makeOrder([burger], CUSTOMER_PRESETS[0].strictness),
 		);
@@ -153,7 +209,8 @@ describe("OrderValidator: строгость клиента", () => {
 				fillingOrder: FILLING_ORDER.UNORDERED,
 			},
 		};
-		const strict = OrderValidator.assessOrder(
+		const strict = OrderValidator.assessOrderDishes(
+			[],
 			makeSnapshot(["mushroom", "dough"]),
 			makeOrder([pizza], 0.9),
 		);

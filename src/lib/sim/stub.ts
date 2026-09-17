@@ -86,6 +86,11 @@ export class StubSim implements ISimPort {
 		if (player) player.layers.length = 0;
 	}
 
+	clearTray(username: string): void {
+		const player = this.players.get(username);
+		if (player) player.layers.length = 0;
+	}
+
 	despawn(username: string): void {
 		if (!this.players.delete(username)) return;
 		this.events.onCharacterRemoved({ type: "CHARACTER_REMOVED", username });
