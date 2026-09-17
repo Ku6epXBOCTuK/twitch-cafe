@@ -6,7 +6,7 @@ import type {
 	CharacterRemovedEvent,
 	SimOutEvent,
 } from "../core/game/sim-dto";
-import { ORDER_STATUS } from "../core/types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
 import type { IOrder } from "../core/types/order";
 import { MENU_ITEMS } from "../core/data/menu";
 import { SessionManager } from "../core/game/session-manager";
@@ -32,7 +32,7 @@ class RecordingEvents implements ISimEvents {
 function makeOrder(): IOrder {
 	return {
 		id: "o1",
-		items: [MENU_ITEMS[0]],
+		items: [{ item: MENU_ITEMS[0], state: ORDER_ITEM_STATE.PENDING }],
 		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
 		timeLimit: 90_000,
 		createdAt: new Date(0),
@@ -172,7 +172,7 @@ describe("sync: связка порт ↔ SessionManager", () => {
 	function fixedBurgerOrder(): IOrder {
 		return {
 			id: "o-fixed",
-			items: [burger],
+			items: [{ item: burger, state: ORDER_ITEM_STATE.PENDING }],
 			customer: { id: "normal", name: "Обычный", strictness: 0.5 },
 			timeLimit: 90_000,
 			createdAt: new Date(0),

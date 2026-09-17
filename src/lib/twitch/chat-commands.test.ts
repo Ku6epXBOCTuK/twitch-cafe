@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IOrder } from "../core/types/order";
-import { ORDER_STATUS } from "../core/types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
 import { MENU_ITEMS } from "../core/data/menu";
 import { ORDER_CONFIG } from "../core/config";
 import { SessionManager } from "../core/game/session-manager";
@@ -12,7 +12,7 @@ const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
 function fixedBurgerOrder(): IOrder {
 	return {
 		id: `o-${Math.random().toString(36).slice(2)}`,
-		items: [burger],
+		items: [{ item: burger, state: ORDER_ITEM_STATE.PENDING }],
 		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
 		timeLimit: 90_000,
 		createdAt: new Date(0),

@@ -132,8 +132,8 @@ export class OrderValidator {
 			};
 		}
 
-		const assessments = order.items.map((item) =>
-			assessItem(item, layers, strictness),
+		const assessments = order.items.map((oi) =>
+			assessItem(oi.item, layers, strictness),
 		);
 		const rating =
 			assessments.reduce((sum, a) => sum + a.rating, 0) / assessments.length;

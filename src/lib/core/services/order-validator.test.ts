@@ -4,7 +4,7 @@ import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
 import type { IIngredient } from "../types/ingredient";
 import type { IMenuItem } from "../types/menu_item";
 import type { IOrder } from "../types/order";
-import { ORDER_STATUS } from "../types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import { FILLING_ORDER } from "../types/recipe";
 import type { ITraySnapshot } from "../types/tray";
 import { OrderValidator } from "./order-validator";
@@ -16,7 +16,10 @@ const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
 function makeOrder(items: IMenuItem[], strictness = 0.5): IOrder {
 	return {
 		id: "test-order",
-		items,
+		items: items.map((item) => ({
+			item,
+			state: ORDER_ITEM_STATE.PENDING,
+		})),
 		customer: { id: "c1", name: "Тест", strictness },
 		timeLimit: 90_000,
 		createdAt: new Date(0),

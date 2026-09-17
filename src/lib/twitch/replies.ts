@@ -1,8 +1,5 @@
-import type { IOrder } from "../core/types/order";
-import type {
-	IMenuItemBase,
-	IMenuItemComposite,
-} from "../core/types/menu_item";
+import type { IOrder, IOrderItem } from "../core/types/order";
+import type { IMenuItemComposite } from "../core/types/menu_item";
 import type { TaskAck } from "../core/game/sim-dto";
 import type { AssessmentResult } from "../core/services/order-validator";
 import { nameForId } from "./ingredients";
@@ -15,7 +12,8 @@ const VERDICT_TEXT: Record<AssessmentResult["verdict"], string> = {
 	awful: "Ужасно!",
 };
 
-export function orderItemLabel(item: IMenuItemBase): string {
+export function orderItemLabel(entry: IOrderItem): string {
+	const item = entry.item;
 	if ("recipe" in item) {
 		const composite = item as IMenuItemComposite;
 		const parts = composite.recipe.ingredients.map((i) => i.name);

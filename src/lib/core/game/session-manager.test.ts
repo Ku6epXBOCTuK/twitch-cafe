@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IOrder } from "../types/order";
-import { ORDER_STATUS } from "../types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import type { IMenuItem } from "../types/menu_item";
 import type { ISimEvents, ISimPort } from "./sim-port";
 import type { TaskIntent } from "./sim-dto";
@@ -18,7 +18,7 @@ const BURGER_IDS = [
 function fixedOrder(item: IMenuItem): IOrder {
 	return {
 		id: `order-${item.id}`,
-		items: [item],
+		items: [{ item, state: ORDER_ITEM_STATE.PENDING }],
 		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
 		timeLimit: 90_000,
 		createdAt: new Date(0),

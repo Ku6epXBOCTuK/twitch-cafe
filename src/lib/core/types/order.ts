@@ -9,9 +9,21 @@ export const ORDER_STATUS = {
 } as const;
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
 
+export const ORDER_ITEM_STATE = {
+	PENDING: "PENDING",
+	SEALED: "SEALED",
+} as const;
+export type OrderItemState =
+	(typeof ORDER_ITEM_STATE)[keyof typeof ORDER_ITEM_STATE];
+
+export interface IOrderItem {
+	item: IMenuItem;
+	state: OrderItemState;
+}
+
 export interface IOrder {
 	id: string;
-	items: IMenuItem[];
+	items: IOrderItem[];
 	customer: ICustomer;
 	timeLimit: number;
 	createdAt: Date;

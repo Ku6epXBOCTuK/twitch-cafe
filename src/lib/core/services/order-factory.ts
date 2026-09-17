@@ -1,5 +1,5 @@
 import type { IOrder } from "../types/order";
-import { ORDER_STATUS } from "../types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import { CUSTOMER_PRESETS } from "../data/customers";
 import { MENU_ITEMS } from "../data/menu";
 import { ORDER_CONFIG } from "../config";
@@ -11,7 +11,7 @@ export class OrderFactory {
 			CUSTOMER_PRESETS[Math.floor(rng() * CUSTOMER_PRESETS.length)];
 		return {
 			id: `order-${Date.now()}-${Math.floor(rng() * 0xffffff)}`,
-			items: [item],
+			items: [{ item, state: ORDER_ITEM_STATE.PENDING }],
 			customer,
 			timeLimit: ORDER_CONFIG.ORDER_TIME_LIMIT_MS,
 			createdAt: new Date(),
