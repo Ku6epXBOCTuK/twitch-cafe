@@ -60,3 +60,7 @@ export type ActionCompletedEvent = Extract<
 	SimOutEvent,
 	{ type: "ACTION_COMPLETED" }
 >;
+export type CharacterRemovedEvent = Extract<
+	SimOutEvent,
+	{ type: "CHARACTER_REMOVED" }
+>;

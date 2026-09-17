@@ -3,6 +3,7 @@ import type { ITraySnapshot } from "../types/tray";
 import type {
 	ActionCompletedEvent,
 	ActionStartedEvent,
+	CharacterRemovedEvent,
 	SimSnapshot,
 	TaskAck,
 	TaskIntent,
@@ -25,5 +26,5 @@ export interface ISimPort {
 export interface ISimEvents {
 	onActionStarted(e: ActionStartedEvent): void;
 	onActionCompleted(e: ActionCompletedEvent): void;
-	onCharacterRemoved(e: { username: string }): void;
+	onCharacterRemoved(e: CharacterRemovedEvent): void;
 }
