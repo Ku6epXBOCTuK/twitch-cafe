@@ -2,8 +2,6 @@ import type { SessionManager } from "../core/game/session-manager";
 import { CommandParser } from "./command-parser";
 import {
 	replyBinAck,
-	replyJoinAlready,
-	replyJoinStart,
 	replyMenu,
 	replyNotInGame,
 	replyPutAck,
@@ -22,10 +20,6 @@ export function processMessage(
 	if (!cmd) return null;
 
 	switch (cmd.kind) {
-		case "join": {
-			const order = sm.startOrder(username);
-			return order ? replyJoinStart(order) : replyJoinAlready(username);
-		}
 		case "put": {
 			if (!cmd.ingredient) return replyUnknownIngredient(username, cmd.token);
 			const ack = sm.putIngredient(username, cmd.ingredient.id);
@@ -35,9 +29,8 @@ export function processMessage(
 			const ack = sm.serve(username);
 			if (!ack.ok) return replyServeAck(username, ack);
 			const result = sm.getLastResult(username);
-			const nextOrder = sm.getOrder(username);
-			if (!result || !nextOrder) return null;
-			return replyResult(username, result, nextOrder);
+			if (!result) return null;
+			return replyResult(username, result);
 		}
 		case "bin": {
 			const ack = sm.bin(username);

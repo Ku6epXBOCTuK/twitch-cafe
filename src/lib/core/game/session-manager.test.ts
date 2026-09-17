@@ -5,6 +5,7 @@ import type { IMenuItem } from "../types/menu_item";
 import type { ISimEvents, ISimPort } from "./sim-port";
 import type { TaskIntent } from "./sim-dto";
 import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
+import { ORDER_CONFIG } from "../config";
 import { SessionManager } from "./session-manager";
 
 const BURGER_IDS = [
@@ -77,7 +78,16 @@ function setup(item?: IMenuItem) {
 	const sm = new SessionManager(item ? () => fixedOrder(item) : undefined);
 	sm.attachPort(port);
 	port.attach(sm);
+	sm.incomingOrders.start();
 	return { port, sm };
+}
+
+/** Прогрев спавна + взятие заказа из слота. */
+function takeOrder(sm: SessionManager, username: string, slot = 0): IOrder {
+	vi.advanceTimersByTime(ORDER_CONFIG.SPAWN_INTERVAL_MS);
+	const res = sm.takeOrder(username, slot);
+	if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
+	return res.order;
 }
 
 beforeEach(() => {
@@ -87,22 +97,47 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe("SessionManager: join", () => {
-	it("startOrder создаёт сессию с pending-заказом и ставит таймер", () => {
+describe("SessionManager: takeOrder", () => {
+	it("берёт заказ из слота: сессия лениво создана, персонаж заспавнен", () => {
 		const { port, sm } = setup();
-		const order = sm.startOrder("alice");
-		expect(order).not.toBeNull();
+		const order = takeOrder(sm, "alice");
+
+		expect(order.status).toBe(ORDER_STATUS.PENDING);
 		expect(sm.hasSession("alice")).toBe(true);
 		expect(sm.getXp("alice")).toBe(0);
-		expect(sm.getLevel("alice")).toBe(1);
+		expect(port.startOrders).toEqual([order]);
+	});
+
+	it("busy при активном заказе: второй take не спавнит персонажа", () => {
+		const { port, sm } = setup();
+		takeOrder(sm, "alice");
+
+		expect(sm.takeOrder("alice", 1)).toEqual({ ok: false, reason: "busy" });
 		expect(port.startOrders).toHaveLength(1);
 	});
 
-	it("повторный join при активном заказе игнорируется", () => {
-		const { port, sm } = setup();
-		sm.startOrder("alice");
-		sm.startOrder("alice");
-		expect(port.startOrders).toHaveLength(1);
+	it("empty_slot на пустой слот — сессия не создаётся", () => {
+		const { sm } = setup();
+
+		expect(sm.takeOrder("alice", 0)).toEqual({
+			ok: false,
+			reason: "empty_slot",
+		});
+		expect(sm.hasSession("alice")).toBe(false);
+	});
+
+	it("невалидный индекс — empty_slot", () => {
+		const { sm } = setup();
+		vi.advanceTimersByTime(ORDER_CONFIG.SPAWN_INTERVAL_MS);
+
+		expect(sm.takeOrder("alice", -1)).toEqual({
+			ok: false,
+			reason: "empty_slot",
+		});
+		expect(sm.takeOrder("alice", 3)).toEqual({
+			ok: false,
+			reason: "empty_slot",
+		});
 	});
 });
 
@@ -122,7 +157,7 @@ describe("SessionManager: serve", () => {
 
 	it("заказ закрыт один раз: дубль события не начисляет XP повторно", () => {
 		const { port, sm } = setup(burger);
-		sm.startOrder("alice");
+		takeOrder(sm, "alice");
 		port.trayLayers = BURGER_IDS;
 
 		const e = serveEvent("alice", 1000, BURGER_IDS);
@@ -131,23 +166,28 @@ describe("SessionManager: serve", () => {
 
 		expect(sm.getXp("alice")).toBe(50);
 		expect(sm.getLastResult("alice")?.verdict).toBe("perfect");
-		expect(port.startOrders).toHaveLength(2); // новый заказ после serve
+		expect(port.startOrders).toHaveLength(1); // авто-выдачи нет
 	});
 
-	it("serve начисляет XP и выдаёт следующий заказ", () => {
+	it("serve начисляет XP и закрывает заказ; новый игрок берёт сам", () => {
 		const { port, sm } = setup(cola);
-		const first = sm.startOrder("alice");
+		const first = takeOrder(sm, "alice");
 		port.trayLayers = ["cola"];
 
 		const ack = sm.serve("alice");
 		expect(ack).toEqual({ ok: true });
 		expect(sm.getLastResult("alice")?.xpDelta).toBe(50);
-		expect(sm.getOrder("alice")).not.toBe(first);
+		expect(sm.getOrder("alice")).toBe(first);
+		expect(first.status).toBe(ORDER_STATUS.COMPLETED);
+
+		const second = takeOrder(sm, "alice");
+		expect(second).not.toBe(first);
+		expect(port.startOrders).toEqual([first, second]);
 	});
 
 	it("serve пустого подноса — штраф", () => {
 		const { port, sm } = setup(cola);
-		sm.startOrder("alice");
+		takeOrder(sm, "alice");
 		port.trayLayers = [];
 
 		sm.serve("alice");
@@ -159,59 +199,37 @@ describe("SessionManager: serve", () => {
 describe("SessionManager: таймаут", () => {
 	it("onTimeout снимает XP, идемпотентен по ссылке на заказ", () => {
 		const { port, sm } = setup();
-		const order = sm.startOrder("alice");
-		expect(order).not.toBeNull();
+		const order = takeOrder(sm, "alice");
 
-		sm.onTimeout("alice", order!);
+		sm.onTimeout("alice", order);
 
-		expect(order!.status).toBe("EXPIRED");
+		expect(order.status).toBe("EXPIRED");
 		expect(sm.getXp("alice")).toBe(-50);
 		expect(port.cancels).toEqual(["timeout"]);
 		expect(port.tasks).toHaveLength(0);
-
-		const nextOrder = sm.getOrder("alice");
-		expect(nextOrder).not.toBe(order);
+		expect(sm.getOrder("alice")).toBe(order); // авто-выдачи нет
 
 		// повторный вызов со старым заказом — игнор
-		sm.onTimeout("alice", order!);
+		sm.onTimeout("alice", order);
 		expect(sm.getXp("alice")).toBe(-50);
 		expect(port.cancels).toHaveLength(1);
 	});
 
-	it("таймер тикает сам: после timeLimit заказ истекает и выдаётся новый", () => {
+	it("таймер тикает сам: после timeLimit заказ истекает", () => {
 		const { port, sm } = setup();
-		const orderA = sm.startOrder("alice");
-		expect(orderA).not.toBeNull();
+		const orderA = takeOrder(sm, "alice");
 
-		vi.advanceTimersByTime(orderA!.timeLimit + 1);
-		expect(orderA!.status).toBe("EXPIRED");
+		vi.advanceTimersByTime(orderA.timeLimit + 1);
+		expect(orderA.status).toBe("EXPIRED");
 		expect(sm.getXp("alice")).toBe(-50);
 		expect(port.cancels).toEqual(["timeout"]);
+		expect(sm.getOrder("alice")).toBe(orderA);
 
-		const orderB = sm.getOrder("alice");
+		// после таймаута игрок может взять следующий заказ
+		const orderB = takeOrder(sm, "alice");
 		expect(orderB).not.toBe(orderA);
-
-		// таймер нового заказа тоже работает: истекает один раз
-		vi.advanceTimersByTime(orderB!.timeLimit + 1);
-		expect(orderB!.status).toBe("EXPIRED");
-		expect(port.cancels).toEqual(["timeout", "timeout"]);
-	});
-});
-
-describe("SessionManager: уровень", () => {
-	it("уровень растёт за XP с шагом 100", () => {
-		const { sm } = setup();
-		sm.startOrder("alice");
-		expect(sm.getLevel("alice")).toBe(1);
-
-		const order = sm.getOrder("alice");
-		expect(order).not.toBeNull();
-		for (let i = 0; i < 4; i++) {
-			const o = sm.getOrder("alice")!;
-			sm.onTimeout("alice", o);
-		}
-		expect(sm.getXp("alice")).toBe(-200);
-		expect(sm.getLevel("alice")).toBe(1);
+		expect(port.startOrders).toEqual([orderA, orderB]);
+		expect(port.cancels).toEqual(["timeout"]);
 	});
 });
 

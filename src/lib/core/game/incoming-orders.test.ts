@@ -39,7 +39,7 @@ describe("IncomingOrders: спавн", () => {
 		board.start();
 		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * SLOT_COUNT);
 
-		const taken = board.take(0);
+		const taken = board.takeOrder(0);
 		expect(taken.ok).toBe(true);
 
 		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
@@ -88,7 +88,7 @@ describe("IncomingOrders: взятие", () => {
 		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
 
 		const expected = board.getSlots()[0]!;
-		const result = board.take(0);
+		const result = board.takeOrder(0);
 		expect(result).toEqual({ ok: true, order: expected });
 		expect(board.getSlots()[0]).toBeNull();
 
@@ -100,9 +100,12 @@ describe("IncomingOrders: взятие", () => {
 		const board = new IncomingOrders();
 		board.start();
 
-		expect(board.take(0)).toEqual({ ok: false, reason: "empty_slot" });
-		expect(board.take(-1)).toEqual({ ok: false, reason: "empty_slot" });
-		expect(board.take(SLOT_COUNT)).toEqual({ ok: false, reason: "empty_slot" });
+		expect(board.takeOrder(0)).toEqual({ ok: false, reason: "empty_slot" });
+		expect(board.takeOrder(-1)).toEqual({ ok: false, reason: "empty_slot" });
+		expect(board.takeOrder(SLOT_COUNT)).toEqual({
+			ok: false,
+			reason: "empty_slot",
+		});
 	});
 
 	it("stop гасит спавн и сгорание", () => {

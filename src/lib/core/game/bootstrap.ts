@@ -14,6 +14,7 @@ export function getGame(): GameCore {
 	if (game) return game;
 	const sessionManager = new SessionManager();
 	const port = connectSim(sessionManager);
+	sessionManager.incomingOrders.start();
 	game = { sessionManager, port };
 	return game;
 }

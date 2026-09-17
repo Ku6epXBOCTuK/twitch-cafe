@@ -8,8 +8,10 @@ import type { AssessmentResult } from "../services/order-validator";
 import { OrderValidator } from "../services/order-validator";
 import { xpForRating } from "../services/scoring";
 import { OrderFactory } from "../services/order-factory";
+import { IncomingOrders } from "./incoming-orders";
 
-export const LEVEL_XP_STEP = 100;
+export type TakeOrderResult =
+	{ ok: true; order: IOrder } | { ok: false; reason: "busy" | "empty_slot" };
 
 export interface PlayerSession {
 	username: string;
@@ -22,17 +24,15 @@ export interface PlayerSession {
 	lastServedAt: number | null;
 }
 
-export function levelForXp(xp: number): number {
-	return Math.max(1, Math.floor(xp / LEVEL_XP_STEP) + 1);
-}
-
 export class SessionManager implements ISimEvents {
 	private readonly sessions = new Map<string, PlayerSession>();
 	private port: ISimPort | null = null;
+	/** Доска входящих заказов. start() зовёт bootstrap.getGame(). */
+	readonly incomingOrders: IncomingOrders;
 
-	constructor(
-		private readonly makeOrder: () => IOrder = OrderFactory.generateOrder,
-	) {}
+	constructor(makeOrder: () => IOrder = OrderFactory.generateOrder) {
+		this.incomingOrders = new IncomingOrders(makeOrder);
+	}
 
 	/** Устанавливает sync.ts: SM отвечает на события порта, порт — на запросы. */
 	attachPort(port: ISimPort): void {
@@ -47,11 +47,6 @@ export class SessionManager implements ISimEvents {
 		return this.sessions.get(username)?.xp;
 	}
 
-	getLevel(username: string): number | undefined {
-		const xp = this.sessions.get(username)?.xp;
-		return xp === undefined ? undefined : levelForXp(xp);
-	}
-
 	getOrder(username: string): IOrder | undefined {
 		return this.sessions.get(username)?.order;
 	}
@@ -60,12 +55,17 @@ export class SessionManager implements ISimEvents {
 		return this.sessions.get(username)?.lastResult ?? null;
 	}
 
-	/** `!join`: сессия + заказ + персонаж в SIM. null, если уже играет. */
-	startOrder(username: string): IOrder | null {
+	/** Взять заказ из слота доски: сессия, таймер, персонаж в SIM. */
+	takeOrder(username: string, slotIndex: number): TakeOrderResult {
 		const existing = this.sessions.get(username);
-		if (existing?.order.status === ORDER_STATUS.PENDING) return null;
+		if (existing?.order.status === ORDER_STATUS.PENDING) {
+			return { ok: false, reason: "busy" };
+		}
 
-		const order = this.makeOrder();
+		const taken = this.incomingOrders.takeOrder(slotIndex);
+		if (!taken.ok) return taken;
+
+		const order = taken.order;
 		const session: PlayerSession = existing
 			? { ...existing, order }
 			: {
@@ -84,7 +84,7 @@ export class SessionManager implements ISimEvents {
 		);
 		this.sessions.set(username, session);
 		this.port?.startOrder(username, order);
-		return order;
+		return { ok: true, order };
 	}
 
 	putIngredient(username: string, ingredientId: string): TaskAck {
@@ -145,8 +145,6 @@ export class SessionManager implements ISimEvents {
 		const result = OrderValidator.assessOrder(tray, order);
 		session.lastResult = result;
 		session.xp += result.xpDelta;
-
-		this.startOrder(session.username);
 	}
 
 	/** Таймаут = плохая сдача (снятие XP). Идемпотентен по ссылке на заказ. */
@@ -159,8 +157,6 @@ export class SessionManager implements ISimEvents {
 		order.status = ORDER_STATUS.EXPIRED;
 		session.xp += xpForRating(0);
 		this.port?.cancelOrder(username, "timeout");
-
-		this.startOrder(username);
 	}
 
 	private clearTimer(session: PlayerSession): void {

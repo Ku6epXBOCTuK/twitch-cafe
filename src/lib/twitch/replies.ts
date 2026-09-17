@@ -28,16 +28,8 @@ export function orderDescription(order: IOrder): string {
 	return order.items.map(orderItemLabel).join(", ");
 }
 
-export function replyJoinStart(order: IOrder): string {
-	return `${order.customer.name} заказал: ${orderDescription(order)}. ${Math.round(order.timeLimit / 1000)} сек!`;
-}
-
-export function replyJoinAlready(username: string): string {
-	return `${username}, ты уже в игре — доделай текущий заказ!`;
-}
-
 export function replyNotInGame(username: string): string {
-	return `${username}, ты не в игре — напиши !join.`;
+	return `${username}, ты не в игре.`;
 }
 
 export function replyUnknownIngredient(
@@ -82,7 +74,6 @@ export function replyBinAck(username: string, ack: TaskAck): string {
 export function replyResult(
 	username: string,
 	result: AssessmentResult,
-	nextOrder: IOrder,
 ): string {
 	const xp =
 		result.xpDelta >= 0 ? `+${result.xpDelta} XP` : `${result.xpDelta} XP`;
@@ -99,7 +90,7 @@ export function replyResult(
 	}
 	complains.push(...result.orderIssues);
 	const notes = complains.length > 0 ? ` (${complains.join("; ")})` : "";
-	return `${username}: ${VERDICT_TEXT[result.verdict]} ${xp}.${notes} Следующий заказ: ${orderDescription(nextOrder)}`;
+	return `${username}: ${VERDICT_TEXT[result.verdict]} ${xp}.${notes}`;
 }
 
 export function replyMenu(

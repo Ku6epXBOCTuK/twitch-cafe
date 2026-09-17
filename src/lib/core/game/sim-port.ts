@@ -10,7 +10,7 @@ import type {
 } from "./sim-dto";
 
 export interface ISimPort {
-	/** `!join`: поднять персонажа, поднос и срез заказа. */
+	/** Взятие заказа: поднять персонажа, поднос и срез заказа. */
 	startOrder(username: string, order: IOrder): void;
 	/** `!put` / `!bin` / `!serve`: принять или отказать. */
 	enqueueTask(username: string, intent: TaskIntent): TaskAck;

@@ -3,7 +3,7 @@ import { ORDER_STATUS } from "../types/order";
 import { ORDER_CONFIG } from "../config";
 import { OrderFactory } from "../services/order-factory";
 
-export type TakeResult =
+export type TakeOrderResult =
 	{ ok: true; order: IOrder } | { ok: false; reason: "empty_slot" };
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -47,7 +47,7 @@ export class IncomingOrders {
 		return [...this.slots];
 	}
 
-	take(slotIndex: number): TakeResult {
+	takeOrder(slotIndex: number): TakeOrderResult {
 		if (slotIndex < 0 || slotIndex >= this.slots.length) {
 			return { ok: false, reason: "empty_slot" };
 		}

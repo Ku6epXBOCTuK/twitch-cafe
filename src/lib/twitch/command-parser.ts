@@ -2,14 +2,12 @@ import type { IngredientEntry } from "./ingredients";
 import { resolveIngredient } from "./ingredients";
 
 export type ParsedCommand =
-	| { kind: "join" }
 	| { kind: "put"; ingredient: IngredientEntry | null; token: string }
 	| { kind: "serve" }
 	| { kind: "bin" }
 	| { kind: "menu" };
 
 const COMMANDS = {
-	join: ["!join", "!start"],
 	serve: ["!serve", "!submit"],
 	bin: ["!bin"],
 	menu: ["!menu"],
@@ -22,7 +20,7 @@ export class CommandParser {
 		if (!head) return null;
 		const command = head.toLowerCase();
 
-		for (const kind of ["join", "serve", "bin", "menu"] as const) {
+		for (const kind of ["serve", "bin", "menu"] as const) {
 			if ((COMMANDS[kind] as readonly string[]).includes(command)) {
 				return { kind };
 			}

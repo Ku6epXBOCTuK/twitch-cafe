@@ -184,15 +184,18 @@ describe("sync: связка порт ↔ SessionManager", () => {
 		const sm = new SessionManager();
 		const port = connectSim(sm);
 
-		const order = sm.startOrder("alice");
-		expect(order).not.toBeNull();
+		sm.incomingOrders.spawn();
+		const res = sm.takeOrder("alice", 0);
+		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 		expect(port.getTraySnapshot("alice")?.layers).toEqual([]);
 	});
 
 	it("полный цикл через порт: put ×4 → serve → XP и вердикт", () => {
 		const sm = new SessionManager(fixedBurgerOrder);
 		const port = connectSim(sm);
-		sm.startOrder("alice");
+		sm.incomingOrders.spawn();
+		const res = sm.takeOrder("alice", 0);
+		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 
 		for (const id of BURGER_IDS) {
 			expect(sm.putIngredient("alice", id)).toEqual({ ok: true });
