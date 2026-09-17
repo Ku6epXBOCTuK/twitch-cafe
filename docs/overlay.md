@@ -93,10 +93,10 @@
 
 ### 1. Инфра
 
-- [ ] adapter-static → `@sveltejs/adapter-node` в `vite.config.ts`
-- [ ] `hooks.server.ts` — гард инициализации (один раз)
-- [ ] `PORT` из `.env` в dev и prod
-- [ ] добавить `pixi.js` v8 в dependencies
+- [x] adapter-static → `@sveltejs/adapter-node` в `vite.config.ts`
+- [x] `hooks.server.ts` — гард инициализации (один раз)
+- [x] `PORT` из `.env` в dev и prod
+- [x] добавить `pixi.js` v8 в dependencies
 
 ### 2. O0: скаффолд оверлея
 

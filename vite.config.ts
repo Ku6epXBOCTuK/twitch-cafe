@@ -1,8 +1,11 @@
-import adapter from "@sveltejs/adapter-static";
+import adapter from "@sveltejs/adapter-node";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+	server: {
+		port: Number(process.env.PORT) || 5173,
+	},
 	plugins: [
 		sveltekit({
 			compilerOptions: {
