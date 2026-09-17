@@ -42,5 +42,9 @@ export function processMessage(
 			const tray = sm.getTraySnapshot(username);
 			return replyMenu(username, order, tray?.layers ?? []);
 		}
+		case "take":
+		case "recipe":
+		case "next":
+			return null; // O2.4
 	}
 }

@@ -9,6 +9,7 @@ import { OrderValidator } from "../services/order-validator";
 import { xpForRating } from "../services/scoring";
 import { OrderFactory } from "../services/order-factory";
 import { IncomingOrders } from "./incoming-orders";
+import { RecipeBook } from "./recipe-book";
 
 export type TakeOrderResult =
 	{ ok: true; order: IOrder } | { ok: false; reason: "busy" | "empty_slot" };
@@ -40,9 +41,12 @@ export class SessionManager implements ISimEvents {
 	private port: ISimPort | null = null;
 	/** Доска входящих заказов. start() зовёт bootstrap.getGame(). */
 	readonly incomingOrders: IncomingOrders;
+	/** Показ рецепта в оверлее (`!рецепт`). */
+	readonly recipeBook: RecipeBook;
 
 	constructor(makeOrder: () => IOrder = OrderFactory.generateOrder) {
 		this.incomingOrders = new IncomingOrders(makeOrder);
+		this.recipeBook = new RecipeBook();
 	}
 
 	/** Устанавливает sync.ts: SM отвечает на события порта, порт — на запросы. */
