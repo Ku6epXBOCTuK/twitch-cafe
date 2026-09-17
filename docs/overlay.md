@@ -52,8 +52,9 @@
 ## Фронт
 
 - `pixi.js` v8 + Svelte 5, один `<canvas>`, обвязка на Svelte.
-- `src/routes/overlay/+page.svelte` — один canvas для всего: сцена (кухня,
-  персонажи), мониторы (входящие, исполнения), окно рецепта.
+- `src/routes/+page.svelte` — главная страница и есть оверлей: один canvas для
+  всего: сцена (кухня, персонажи), мониторы (входящие, исполнения), окно
+  рецепта.
 - `src/lib/overlay/overlay-store.ts` — `EventSource("/api/overlay/sse")` →
   store.
 - `src/lib/overlay/pixi-scene.ts`, `src/lib/overlay/pixi-boards.ts` — сцена и
@@ -100,7 +101,8 @@
 - [x] `static/assets/manifest.json` + каталоги `ingredients/`, `stations/`,
       `characters/`, `boards/`
 - [x] `src/lib/overlay/loader.ts` — загрузка ассетов по манифесту
-- [x] `src/routes/overlay/+page.svelte` — один canvas, все мониторы на нём
+- [x] `src/routes/+page.svelte` — один canvas, все мониторы на нём (главная
+      страница)
 - [x] `src/lib/overlay/overlay-store.ts` — `EventSource` → store
 
 ### 3. SSE + интеграция
