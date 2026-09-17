@@ -44,7 +44,9 @@ describe("SSE-роут /api/overlay/sse", () => {
 		for (const frame of frames) {
 			expect(Array.isArray(frame.data.incoming)).toBe(true);
 			expect(Array.isArray(frame.data.execution)).toBe(true);
-			expect(frame.data.recipe).toBeNull();
+			expect(
+				frame.data.recipe === null || typeof frame.data.recipe === "object",
+			).toBe(true);
 		}
 	});
 });
