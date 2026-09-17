@@ -1,0 +1,29 @@
+{
+	"bundles": [
+		{
+			"name": "overlay",
+			"assets": [
+				{
+					"alias": "station.trash",
+					"src": "/assets/stations/trash.png"
+				},
+				{
+					"alias": "station.shelf",
+					"src": "/assets/stations/shelf.png"
+				},
+				{
+					"alias": "station.serve",
+					"src": "/assets/stations/serve.png"
+				},
+				{
+					"alias": "station.recipe",
+					"src": "/assets/stations/recipe.png"
+				},
+				{
+					"alias": "character.base",
+					"src": "/assets/characters/base.png"
+				}
+			]
+		}
+	]
+}

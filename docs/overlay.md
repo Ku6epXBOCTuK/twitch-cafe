@@ -52,11 +52,8 @@
 ## Фронт
 
 - `pixi.js` v8 + Svelte 5, один `<canvas>`, обвязка на Svelte.
-- `src/routes/overlay/+page.svelte` — по `?view=`:
-  - `scene` (по умолчанию) — кухня, персонажи, мониторы, окно рецепта;
-  - `incoming` — только монитор входящих;
-  - `execution` — только монитор исполнения;
-  - `recipe` — только окно рецепта.
+- `src/routes/overlay/+page.svelte` — один canvas для всего: сцена (кухня,
+  персонажи), мониторы (входящие, исполнения), окно рецепта.
 - `src/lib/overlay/overlay-store.ts` — `EventSource("/api/overlay/sse")` →
   store.
 - `src/lib/overlay/pixi-scene.ts`, `src/lib/overlay/pixi-boards.ts` — сцена и
@@ -81,7 +78,7 @@
 
 | Шаг    | Что делаем                                                                             | DoD                                                              |
 | ------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| **O0** | скаффолд оверлея: `<canvas>`, загрузчик ассетов, view-варианты                         | страница открывается, canvas живой, `?view=` работает            |
+| **O0** | скаффолд оверлея: `<canvas>`, загрузчик ассетов, SSE-подключение                       | страница открывается, canvas живой                               |
 | **O1** | входящие заказы: автоген, слоти, время жизни — + тесты                                 | тесты: наполнение до 3 слотов, сгорание, взятие пустого/занятого |
 | **O2** | команды: удалить `!join`, добавить `!взять`, `!заказ`, `!next`, `!рецепт` + тесты      | `pnpm test` по сценарию «взял → собрал → serve → снова свободен» |
 | **O3** | проекция: снапшот оверлея, FIFO-слоты монитора исполнения, прогресс MenuItem — + тесты | тесты: старейший слот перезаписывается, позиции стабильны        |
@@ -100,12 +97,11 @@
 
 ### 2. O0: скаффолд оверлея
 
-- [ ] `static/assets/manifest.json` + каталоги `ingredients/`, `stations/`,
+- [x] `static/assets/manifest.json` + каталоги `ingredients/`, `stations/`,
       `characters/`, `boards/`
-- [ ] `src/lib/overlay/loader.ts` — загрузка ассетов по манифесту
-- [ ] `src/routes/overlay/+page.svelte` — canvas + `?view=`
-      (scene/incoming/execution/recipe)
-- [ ] `src/lib/overlay/overlay-store.ts` — `EventSource` → store
+- [x] `src/lib/overlay/loader.ts` — загрузка ассетов по манифесту
+- [x] `src/routes/overlay/+page.svelte` — один canvas, все мониторы на нём
+- [x] `src/lib/overlay/overlay-store.ts` — `EventSource` → store
 
 ### 3. SSE + интеграция
 

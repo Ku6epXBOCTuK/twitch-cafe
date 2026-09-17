@@ -3,7 +3,12 @@
 	"compilerOptions": {
 		"rewriteRelativeImportExtensions": true,
 		"sourceMap": true,
-		"strict": true
+		"strict": true,
+		"moduleResolution": "bundler",
+		"paths": {
+			"#lib": ["./src/lib/index.ts", "./src/lib/index.js"],
+			"#lib/*": ["./src/lib/*", "./src/lib/*.ts", "./src/lib/*.js"]
+		}
 	},
 	"include": ["src"]
 }
