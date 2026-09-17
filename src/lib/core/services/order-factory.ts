@@ -2,9 +2,7 @@ import type { IOrder } from "../types/order";
 import { ORDER_STATUS } from "../types/order";
 import { CUSTOMER_PRESETS } from "../data/customers";
 import { MENU_ITEMS } from "../data/menu";
-
-/** Лимит заказа: 90 секунд. */
-export const ORDER_TIME_LIMIT_MS = 90_000;
+import { ORDER_CONFIG } from "../config";
 
 export class OrderFactory {
 	static generateOrder(rng: () => number = Math.random): IOrder {
@@ -15,7 +13,7 @@ export class OrderFactory {
 			id: `order-${Date.now()}-${Math.floor(rng() * 0xffffff)}`,
 			items: [item],
 			customer,
-			timeLimit: ORDER_TIME_LIMIT_MS,
+			timeLimit: ORDER_CONFIG.ORDER_TIME_LIMIT_MS,
 			createdAt: new Date(),
 			status: ORDER_STATUS.PENDING,
 		};
