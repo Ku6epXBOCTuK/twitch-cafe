@@ -138,9 +138,9 @@
 ## 6. Оверлей (O3-заготовка, минимум)
 
 - `types.ts`: `ExecutionDish { name: string; sealed: boolean }` уже есть.
-- SSE-стаб (api/overlay/sse) и проекция — **не трогаем** (O3). Но demo-данные
-  SSE-стаба используют `IOrder`-форму `items: IMenuItem[]` — обновить на
-  `IOrderItem[]` breaking-изменение (demo заказы: `items: [{item, state}]`).
+- SSE-стаб (api/overlay/sse) и проекция — **не трогаем** (O3). (Уточнение по
+  итогам O2.1: SSE-стаб не использует `IOrder` — у `OverlaySnapshot` своя форма
+  `dishes: string[]`, так что обновлять было нечего.)
 
 ## 7. Тесты
 
@@ -175,3 +175,8 @@
    (take, recipe, next) + реплики, переключение на sink, тесты сценариев.
 5. O2.5: финальная проверка (test/check/format/lint/build), DoD-галочки
    (docs/overlay.md O2, этот файл).
+
+## 9. DoD (docs/overlay.md)
+
+- [x] `!взять`/`!заказ`/`!next`/`!рецепт` работают, тесты сценариев зелёные
+- [x] `pnpm test` зелёный, `pnpm check`/`pnpm lint`/`pnpm build` чистые
