@@ -8,6 +8,7 @@ export const snapshot: Writable<OverlaySnapshot> = writable({
 });
 
 let source: EventSource | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function connect(): void {
 	if (source) return;
@@ -18,5 +19,20 @@ export function connect(): void {
 	source.onerror = () => {
 		source?.close();
 		source = null;
+		if (!reconnectTimer) {
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = null;
+				connect();
+			}, 3000);
+		}
 	};
+}
+
+export function disconnect(): void {
+	if (reconnectTimer) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
+	}
+	source?.close();
+	source = null;
 }
