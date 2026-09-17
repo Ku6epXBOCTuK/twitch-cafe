@@ -2,6 +2,7 @@ import { StaticAuthProvider } from "@twurple/auth";
 import { ChatClient } from "@twurple/chat";
 import type { SessionManager } from "../core/game/session-manager";
 import { processMessage } from "./chat-commands";
+import { ChatSink } from "./command-sink";
 
 export interface ChatBotConfig {
 	/** Client ID приложения из dev.twitch.tv/console/apps. */
@@ -35,18 +36,11 @@ export function startChatBot(
 		)
 			return;
 
-		let reply: string | null;
 		try {
-			reply = processMessage(text, user, sm);
+			processMessage(text, user, sm, new ChatSink(client, channel));
 		} catch (err) {
 			console.error(`[chat] ${user}: обработка сломалась:`, err);
-			return;
 		}
-		if (!reply) return;
-
-		void client.say(channel, reply).catch((err) => {
-			console.error(`[chat] не удалось отправить ответ в ${channel}:`, err);
-		});
 	});
 
 	client.onAuthenticationSuccess(() => {
