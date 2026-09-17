@@ -1,10 +1,5 @@
 import { writable, type Writable } from "svelte/store";
-
-export interface OverlaySnapshot {
-	incoming: { id: string; label: string }[];
-	execution: { id: string; label: string }[];
-	recipe: { id: string; label: string } | null;
-}
+import type { OverlaySnapshot } from "./types";
 
 export const snapshot: Writable<OverlaySnapshot> = writable({
 	incoming: [],
