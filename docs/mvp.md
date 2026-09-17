@@ -105,12 +105,20 @@ RULE CORE и чате.
    работает через
    `CommandParser → SessionManager → StubSim → OrderValidator → xpDelta → следующий заказ`.
    **Момент, когда «процесс игры работает».**
+7. **S6 — живой чат** (MVP): `@twurple/chat` + `startChatBot`
+   (`twitch/chat-bot.ts`), точка входа `src/standalone/bot.ts` (`pnpm bot`),
+   `processMessage` → ответ в канал.
+8. **S7 — стабильная авторизация** (MVP): заменить `StaticAuthProvider` на
+   `RefreshingAuthProvider` (`@twurple/auth`). Нужны `client_secret` +
+   `refresh_token` (Authorization Code Flow) — токен продлевается сам, без
+   ручного обновления каждый день. DoD: бот живёт дольше 24 часов без
+   вмешательства.
 
 ## Чего НЕ делаем сейчас
 
 - miniplex-мир, тик/движение (`simulation.ts`, `move.ts`, `actions.ts`);
 - снапшот позиций для оверлея, SSE-сервер, PROJECTION-страница;
-- twurple-чат;
+- twurple-чат; (добавлен как **S6** — часть MVP)
 - анимации, pathfinding, очереди у станций.
 
 Всё это — шаги `docs/sim.md` и `docs/plan.md` S6/S7, они прикручиваются поверх
