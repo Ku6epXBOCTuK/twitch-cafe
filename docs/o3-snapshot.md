@@ -16,21 +16,21 @@ execution/recipe) сохраняют форму — фронт и `pixi-boards.t
 и типы остаются в core-доступных слоях: проектор читает только публичные методы
 SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
 
-- **incoming**: `sm.incomingOrders.getSlots()` → непустые слоты →
-  `IncomingOrder { id, dishes: items.map(i => i.item.name), strictness: order.customer.strictness, deadline: createdAt + timeLimit }`.
-- **execution**: только заказы на мониторах. Источник — сессии SM: добавить
-  метод `getSessions(): PlayerSession[]` (shallow-копии всех сессий; ядро не
-  отдаёт живую мутабельную Map). Фильтр `status === PENDING` →
-  `ExecutionOrder { id: order.id, performer: username, dishes, deadline }`.
-  `ExecutionDish { name, done }`:
+- [ ] **incoming**: `sm.incomingOrders.getSlots()` → непустые слоты →
+      `IncomingOrder { id, dishes: items.map(i => i.item.name), strictness: order.customer.strictness, deadline: createdAt + timeLimit }`.
+- [ ] **execution**: только заказы на мониторах. Источник — сессии SM: добавить
+      метод `getSessions(): PlayerSession[]` (shallow-копии всех сессий; ядро не
+      отдаёт живую мутабельную Map). Фильтр `status === PENDING` →
+      `ExecutionOrder { id: order.id, performer: username, dishes, deadline }`.
+      `ExecutionDish { name, done }`:
   - `state === SEALED` → `done: true`;
   - текущее блюдо (index === currentItemIndex) → `done: false` (MVP: без
     прогресса по слоям подноса — прогресс добавим, когда решим как считать);
   - будущие → `done: false`.
-- **players**: отдельная сущность для будущих аватарок (рендер — потом, в O4+;
-  сейчас только данные, чтобы потом меньше возни в SIM). Для каждого игрока из
-  `getSessions()`:
-  `PlayerState { username, x: 0, y: 0, order: PlayerOrder | null }`:
+- [ ] **players**: отдельная сущность для будущих аватарок (рендер — потом, в
+      O4+; сейчас только данные, чтобы потом меньше возни в SIM). Для каждого
+      игрока из `getSessions()`:
+      `PlayerState { username, x: 0, y: 0, order: PlayerOrder | null }`:
   - координаты — заглушка `0, 0`, реальные появятся из SIM (O4);
   - `order` — только при `status === PENDING`:
     `PlayerOrder { dishes: PlayerDish[] }` — статус заказа по блюдам: сколько в
@@ -40,15 +40,16 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
     блюдо запечатано (`ORDER_ITEM_STATE.SEALED`); текущее и будущие — `false`.
     После serve/timeout/без заказа → `order: null` (сессия осталась в players —
     игрок ещё на кухне).
-- **тип блюда**: в `IMenuItem` нет категории «бургер/пицца/напиток» — добавляем
-  поле `kind` в `IMenuItemBase` (`MENU_ITEM_KIND = { BURGER, PIZZA, DRINK }`);
-  `data/menu.ts`: бургер → `kind: "burger"`, кола → `kind: "drink"`.
-- **recipe**: `sm.recipeBook.getCurrent()` →
-  `RecipeCard { id, name, ingredients: item.recipe?.ingredients ?? [] }` (у
-  simple — пустой список) или `null`. Решено: рецепт висит на доске, пока его не
-  заменит `!рецепт` или не скроет `stop()` — автоскрытия нет.
-- Типы: в `overlay/types.ts` добавить `PlayerDish`, `PlayerOrder`,
-  `PlayerState`, поле `players: PlayerState[]` в `OverlaySnapshot`.
+- [x] **тип блюда**: в `IMenuItem` нет категории «бургер/пицца/напиток» —
+      добавляем поле `kind` в `IMenuItemBase`
+      (`MENU_ITEM_KIND = { BURGER, PIZZA, DRINK }`); `data/menu.ts`: бургер →
+      `kind: "burger"`, кола → `kind: "drink"`.
+- [ ] **recipe**: `sm.recipeBook.getCurrent()` →
+      `RecipeCard { id, name, ingredients: item.recipe?.ingredients ?? [] }` (у
+      simple — пустой список) или `null`. Решено: рецепт висит на доске, пока
+      его не заменит `!рецепт` или не скроет `stop()` — автоскрытия нет.
+- [ ] Типы: в `overlay/types.ts` добавить `PlayerDish`, `PlayerOrder`,
+      `PlayerState`, поле `players: PlayerState[]` в `OverlaySnapshot`.
 
 ## 2. SSE-роут: реальная проекция
 
@@ -58,8 +59,8 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
 
 ## 3. Тесты
 
-- `projector.test.ts` (новый): собрать SM с фиксированной фабрикой заказов
-  (паттерн session-manager.test.ts):
+- [ ] `projector.test.ts` (новый): собрать SM с фиксированной фабрикой заказов
+      (паттерн session-manager.test.ts):
   - 2 заказа в слотах → incoming: имена блюд, strictness, deadline;
   - занятый слот (после takeOrder) → исчез из incoming;
   - исполнитель: сессия с 2 блюдами (бургер + кола) → dishes [{done:false},
@@ -71,9 +72,9 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
     (сессия осталась в players — игрок ещё на кухне);
   - recipe: show(буржер) → карта с ингредиентами; show(кола) → пустые
     ингредиенты; без show → null.
-- `sse.test.ts`: обновить — первый кадр стрима соответствует проекции
-  пустого/тестового ядра (пока SSE-роут собирает кадр из getGame, тест проверяет
-  только структуру кадра: парсится как OverlaySnapshot).
+- [ ] `sse.test.ts`: обновить — первый кадр стрима соответствует проекции
+      пустого/тестового ядра (пока SSE-роут собирает кадр из getGame, тест
+      проверяет только структуру кадра: парсится как OverlaySnapshot).
 
 ## 4. Не делаем (бэклог)
 

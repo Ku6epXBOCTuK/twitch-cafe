@@ -1,6 +1,10 @@
 import type { IIngredient } from "../types/ingredient";
 import { INGREDIENT_CATEGORY } from "../types/ingredient";
-import { MENU_ITEM_VARIANT, type IMenuItem } from "../types/menu_item";
+import {
+	MENU_ITEM_KIND,
+	MENU_ITEM_VARIANT,
+	type IMenuItem,
+} from "../types/menu_item";
 import type { IRecipe } from "../types/recipe";
 import { FILLING_ORDER } from "../types/recipe";
 
@@ -39,8 +43,14 @@ export const MENU_ITEMS: readonly IMenuItem[] = [
 	{
 		id: "burger",
 		name: "Бургер",
+		kind: MENU_ITEM_KIND.BURGER,
 		variant: MENU_ITEM_VARIANT.COMPOSITE,
 		recipe: BURGER_RECIPE,
 	},
-	{ id: "cola", name: "Кола", variant: MENU_ITEM_VARIANT.SIMPLE },
+	{
+		id: "cola",
+		name: "Кола",
+		kind: MENU_ITEM_KIND.DRINK,
+		variant: MENU_ITEM_VARIANT.SIMPLE,
+	},
 ];

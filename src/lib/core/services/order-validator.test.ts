@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CUSTOMER_PRESETS } from "../data/customers";
 import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
 import type { IIngredient } from "../types/ingredient";
-import type { IMenuItem } from "../types/menu_item";
+import { MENU_ITEM_KIND, type IMenuItem } from "../types/menu_item";
 import type { IOrder } from "../types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import { FILLING_ORDER } from "../types/recipe";
@@ -201,6 +201,7 @@ describe("OrderValidator: строгость клиента", () => {
 		const pizza = {
 			id: "pizza",
 			name: "Пицца",
+			kind: MENU_ITEM_KIND.PIZZA,
 			variant: "composite" as const,
 			recipe: {
 				id: "pizza",
