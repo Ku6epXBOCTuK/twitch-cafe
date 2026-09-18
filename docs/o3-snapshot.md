@@ -16,9 +16,9 @@ execution/recipe) сохраняют форму — фронт и `pixi-boards.t
 и типы остаются в core-доступных слоях: проектор читает только публичные методы
 SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
 
-- [ ] **incoming**: `sm.incomingOrders.getSlots()` → непустые слоты →
+- [x] **incoming**: `sm.incomingOrders.getSlots()` → непустые слоты →
       `IncomingOrder { id, dishes: items.map(i => i.item.name), strictness: order.customer.strictness, deadline: createdAt + timeLimit }`.
-- [ ] **execution**: только заказы на мониторах. Источник — сессии SM: добавить
+- [x] **execution**: только заказы на мониторах. Источник — сессии SM: добавить
       метод `getSessions(): PlayerSession[]` (shallow-копии всех сессий; ядро не
       отдаёт живую мутабельную Map). Фильтр `status === PENDING` →
       `ExecutionOrder { id: order.id, performer: username, dishes, deadline }`.
@@ -27,7 +27,7 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
   - текущее блюдо (index === currentItemIndex) → `done: false` (MVP: без
     прогресса по слоям подноса — прогресс добавим, когда решим как считать);
   - будущие → `done: false`.
-- [ ] **players**: отдельная сущность для будущих аватарок (рендер — потом, в
+- [x] **players**: отдельная сущность для будущих аватарок (рендер — потом, в
       O4+; сейчас только данные, чтобы потом меньше возни в SIM). Для каждого
       игрока из `getSessions()`:
       `PlayerState { username, x: 0, y: 0, order: PlayerOrder | null }`:
@@ -44,12 +44,17 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
       добавляем поле `kind` в `IMenuItemBase`
       (`MENU_ITEM_KIND = { BURGER, PIZZA, DRINK }`); `data/menu.ts`: бургер →
       `kind: "burger"`, кола → `kind: "drink"`.
-- [ ] **recipe**: `sm.recipeBook.getCurrent()` →
+- [x] **recipe**: `sm.recipeBook.getCurrent()` →
       `RecipeCard { id, name, ingredients: item.recipe?.ingredients ?? [] }` (у
       simple — пустой список) или `null`. Решено: рецепт висит на доске, пока
       его не заменит `!рецепт` или не скроет `stop()` — автоскрытия нет.
-- [ ] Типы: в `overlay/types.ts` добавить `PlayerDish`, `PlayerOrder`,
+- [x] Типы: в `overlay/types.ts` добавить `PlayerDish`, `PlayerOrder`,
       `PlayerState`, поле `players: PlayerState[]` в `OverlaySnapshot`.
+
+Факт реализации: в `SessionManager.nextDish` добавлена пометка текущего блюда
+`ORDER_ITEM_STATE.SEALED` (до этого `nextDish` только копил `session.sealed`,
+поэтому `state === SEALED` никогда не был истинным и `done` был бы всегда
+`false`).
 
 ## 2. SSE-роут: реальная проекция
 
@@ -59,7 +64,7 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
 
 ## 3. Тесты
 
-- [ ] `projector.test.ts` (новый): собрать SM с фиксированной фабрикой заказов
+- [x] `projector.test.ts` (новый): собрать SM с фиксированной фабрикой заказов
       (паттерн session-manager.test.ts):
   - 2 заказа в слотах → incoming: имена блюд, strictness, deadline;
   - занятый слот (после takeOrder) → исчез из incoming;
@@ -72,7 +77,7 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
     (сессия осталась в players — игрок ещё на кухне);
   - recipe: show(буржер) → карта с ингредиентами; show(кола) → пустые
     ингредиенты; без show → null.
-- [ ] `sse.test.ts`: обновить — первый кадр стрима соответствует проекции
+- [x] `sse.test.ts`: обновить — первый кадр стрима соответствует проекции
       пустого/тестового ядра (пока SSE-роут собирает кадр из getGame, тест
       проверяет только структуру кадра: парсится как OverlaySnapshot).
 
@@ -86,12 +91,17 @@ SM/IncomingOrders/RecipeBook (ядро не знает про оверлей).
 - Рендер players на фронте — данных в снапшоте достаточно, рисуем позже.
 - `kind` на `ExecutionDish` (на мониторах показываем имя, тип нужен только у
   аватарок) и `kind` в RecipeCard (рецепт — карточка с именем).
+- FIFO-перезапись слота монитора исполнения по `!заказ` и стабильные позиции
+  слотов: O3 отдаёт `execution` как проекцию PENDING-сессий в порядке взятия,
+  фронт рисует их по индексу массива. Реальная сетка слотов с перезаписью
+  старейшего — бэклог.
 
 ## 5. DoD (docs/overlay.md)
 
-- [ ] проекция, players-сущность, FIFO-слоты исполнения + тесты (прогресс
-      MenuItem — см. «Не делаем», отмечаем с оговоркой в overlay.md)
-- [ ] `pnpm test` зелёный, `pnpm check`/`pnpm lint`/`pnpm build` чистые
+- [x] проекция, players-сущность, execution из PENDING-сессий + тесты. Оговорки
+      (перенесено в «Не делаем»): прогресс MenuItem и FIFO-перезапись слота по
+      `!заказ` — бэклог.
+- [x] `pnpm test` зелёный, `pnpm check`/`pnpm lint`/`pnpm build` чистые
 
 ## 6. Шаги
 
