@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { getGame } from "../core/game/bootstrap";
+import { project } from "./projector";
 import type { OverlaySnapshot } from "./types";
 import { GET } from "../../routes/api/overlay/sse/+server";
 
@@ -38,15 +40,19 @@ describe("SSE-роут /api/overlay/sse", () => {
 		expect(response.headers.get("cache-control")).toContain("no-cache");
 	});
 
-	it("стримит кадры снапшота с корректной формой", async () => {
-		const frames = await readFrames(GET(), 2);
-		expect(frames.length).toBeGreaterThanOrEqual(2);
-		for (const frame of frames) {
-			expect(Array.isArray(frame.data.incoming)).toBe(true);
-			expect(Array.isArray(frame.data.execution)).toBe(true);
-			expect(
-				frame.data.recipe === null || typeof frame.data.recipe === "object",
-			).toBe(true);
-		}
+	it("первый кадр стрима — проекция текущего ядра", async () => {
+		const frames = await readFrames(GET(), 1);
+		expect(frames).toHaveLength(1);
+
+		const snapshot = frames[0].data;
+		// Ядро в тесте пустое: кадр совпадает с прямым вызовом проектора.
+		expect(snapshot).toEqual(project(getGame().sessionManager));
+
+		expect(Array.isArray(snapshot.incoming)).toBe(true);
+		expect(Array.isArray(snapshot.execution)).toBe(true);
+		expect(Array.isArray(snapshot.players)).toBe(true);
+		expect(
+			snapshot.recipe === null || typeof snapshot.recipe === "object",
+		).toBe(true);
 	});
 });

@@ -1,43 +1,13 @@
 import type { OverlaySnapshot } from "#lib/overlay/types";
+import { getGame } from "#lib/core/game/bootstrap";
+import { project } from "#lib/overlay/projector";
 
 const ENCODER = new TextEncoder();
 const FRAME_INTERVAL_MS = 250;
 
-/** O3: проекция будет собирать кадр из SimSnapshot. Пока — демо-данные. */
-function stubSnapshot(): OverlaySnapshot {
-	return {
-		incoming: [
-			{
-				id: "demo-in-1",
-				dishes: ["Маргарита", "Пепперони"],
-				strictness: 3,
-				deadline: Date.now() + 5 * 60_000,
-			},
-			{
-				id: "demo-in-2",
-				dishes: ["Гавайская"],
-				strictness: 1,
-				deadline: Date.now() + 3 * 60_000,
-			},
-		],
-		execution: [
-			{
-				id: "demo-ex-1",
-				performer: "Ku6epXBOCTuK",
-				dishes: [
-					{ name: "Маргарита", done: true },
-					{ name: "Пепперони", done: false },
-				],
-				deadline: Date.now() + 2 * 60_000,
-			},
-		],
-		players: [],
-		recipe: {
-			id: "demo-recipe",
-			name: "Пепперони",
-			ingredients: ["тесто", "соус", "сыр", "пепперони"],
-		},
-	};
+/** O3: кадр = чистая проекция текущего состояния ядра. */
+function currentSnapshot(): OverlaySnapshot {
+	return project(getGame().sessionManager);
 }
 
 function frame(snapshot: OverlaySnapshot): Uint8Array {
@@ -49,9 +19,9 @@ export function GET(): Response {
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
-			controller.enqueue(frame(stubSnapshot()));
+			controller.enqueue(frame(currentSnapshot()));
 			timer = setInterval(() => {
-				controller.enqueue(frame(stubSnapshot()));
+				controller.enqueue(frame(currentSnapshot()));
 			}, FRAME_INTERVAL_MS);
 		},
 		cancel() {
