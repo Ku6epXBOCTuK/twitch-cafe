@@ -1,3 +1,5 @@
+import type { MenuItemKind } from "../core/types/menu_item";
+
 export interface IncomingOrder {
 	id: string;
 	dishes: string[];
@@ -19,6 +21,26 @@ export interface ExecutionOrder {
 	deadline: number;
 }
 
+/** Иконка блюда над аватаркой игрока (рендер — O4+). */
+export interface PlayerDish {
+	kind: MenuItemKind;
+	done: boolean;
+}
+
+/** Заказ игрока по блюдам: длина = сколько всего, `done` = запечатано. */
+export interface PlayerOrder {
+	dishes: PlayerDish[];
+}
+
+export interface PlayerState {
+	username: string;
+	/** Координаты — заглушка до O4 (SIM). */
+	x: number;
+	y: number;
+	/** `null`, если активного заказа нет; сессия при этом остаётся. */
+	order: PlayerOrder | null;
+}
+
 export interface RecipeCard {
 	id: string;
 	name: string;
@@ -28,5 +50,6 @@ export interface RecipeCard {
 export interface OverlaySnapshot {
 	incoming: IncomingOrder[];
 	execution: ExecutionOrder[];
+	players: PlayerState[];
 	recipe: RecipeCard | null;
 }

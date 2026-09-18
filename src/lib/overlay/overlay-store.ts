@@ -4,6 +4,7 @@ import type { OverlaySnapshot } from "./types";
 export const snapshot: Writable<OverlaySnapshot> = writable({
 	incoming: [],
 	execution: [],
+	players: [],
 	recipe: null,
 });
 

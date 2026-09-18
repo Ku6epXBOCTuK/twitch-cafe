@@ -1,5 +1,5 @@
 import type { IOrder } from "../types/order";
-import { ORDER_STATUS } from "../types/order";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import type { ISimEvents, ISimPort } from "./sim-port";
 import type { TaskAck } from "./sim-dto";
 import type { ActionCompletedEvent, CharacterRemovedEvent } from "./sim-dto";
@@ -68,6 +68,14 @@ export class SessionManager implements ISimEvents {
 
 	getLastResult(username: string): AssessmentResult | null {
 		return this.sessions.get(username)?.lastResult ?? null;
+	}
+
+	/**
+	 * Shallow-копии всех сессий: наружу не уходит живая мутабельная Map.
+	 * Использует проекция оверлея (O3).
+	 */
+	getSessions(): PlayerSession[] {
+		return [...this.sessions.values()].map((session) => ({ ...session }));
 	}
 
 	/** Взять заказ из слота доски: сессия, таймер, персонаж в SIM. */
@@ -148,6 +156,8 @@ export class SessionManager implements ISimEvents {
 			return { ok: false, reason: "tray_empty" };
 		}
 
+		session.order.items[session.currentItemIndex].state =
+			ORDER_ITEM_STATE.SEALED;
 		session.sealed.push({
 			...snapshot,
 			frozenAt: Date.now(),

@@ -31,6 +31,7 @@ function stubSnapshot(): OverlaySnapshot {
 				deadline: Date.now() + 2 * 60_000,
 			},
 		],
+		players: [],
 		recipe: {
 			id: "demo-recipe",
 			name: "Пепперони",
