@@ -146,4 +146,4 @@
 
 ### 8. O6: OBS
 
-- [ ] OBS Browser Sources — 4 ссылки, `.env`, README
+- [ ] OBS Browser Sources — 4 ссылки (???), `.env`, README

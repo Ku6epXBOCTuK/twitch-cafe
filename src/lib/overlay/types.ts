@@ -1,6 +1,8 @@
 import type { MenuItemKind } from "../core/types/menu_item";
 
 export interface IncomingOrder {
+	/** Номер слота доски входящих, 1-based — тот же, что в `!взять N`. */
+	slot: number;
 	id: string;
 	dishes: string[];
 	strictness: number;

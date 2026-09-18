@@ -13,13 +13,13 @@ export type ParsedCommand =
 	| { kind: "next" };
 
 const COMMANDS = {
-	serve: ["!serve", "!submit"],
-	bin: ["!bin"],
+	serve: ["!serve", "!submit", "!отдать"],
+	bin: ["!bin", "!мусор"],
 	menu: ["!menu", "!заказ", "!order"],
 	put: ["!put", "!add", "!положи"],
 	take: ["!взять", "!take"],
 	recipe: ["!рецепт", "!recipe"],
-	next: ["!next"],
+	next: ["!next", "!дальше"],
 } as const;
 
 export class CommandParser {

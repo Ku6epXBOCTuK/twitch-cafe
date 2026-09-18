@@ -86,6 +86,11 @@ describe("CommandParser: next", () => {
 	it("!next → next", () => {
 		expect(CommandParser.parse("!next")).toEqual({ kind: "next" });
 	});
+
+	it("русский алиас !дальше", () => {
+		expect(CommandParser.parse("!дальше")).toEqual({ kind: "next" });
+		expect(CommandParser.parse("!ДАЛЬШЕ")).toEqual({ kind: "next" });
+	});
 });
 
 describe("resolveMenuItem", () => {

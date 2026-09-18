@@ -103,8 +103,15 @@ describe("project: incoming", () => {
 		sm.incomingOrders.spawn();
 
 		expect(project(sm).incoming).toEqual([
-			{ id: "o1", dishes: ["Бургер"], strictness: 0.2, deadline: DEADLINE_MS },
 			{
+				slot: 1,
+				id: "o1",
+				dishes: ["Бургер"],
+				strictness: 0.2,
+				deadline: DEADLINE_MS,
+			},
+			{
+				slot: 2,
 				id: "o2",
 				dishes: ["Кола", "Кола"],
 				strictness: 0.9,
@@ -113,13 +120,21 @@ describe("project: incoming", () => {
 		]);
 	});
 
-	it("взятый слот исчезает из incoming", () => {
+	it("взятый слот исчезает из incoming, номера слотов не сдвигаются", () => {
 		const { sm } = setup([makeOrder("o1", [BURGER]), makeOrder("o2", [COLA])]);
 		sm.incomingOrders.spawn();
 		sm.incomingOrders.spawn();
 
 		expect(sm.takeOrder("alice", 0)).toMatchObject({ ok: true });
-		expect(project(sm).incoming.map((order) => order.id)).toEqual(["o2"]);
+		expect(project(sm).incoming).toEqual([
+			{
+				slot: 2,
+				id: "o2",
+				dishes: ["Кола"],
+				strictness: 0.5,
+				deadline: DEADLINE_MS,
+			},
+		]);
 	});
 });
 

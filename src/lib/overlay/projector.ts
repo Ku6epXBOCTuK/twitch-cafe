@@ -31,15 +31,17 @@ function isSealed(item: IOrderItem): boolean {
 
 function projectIncoming(sm: SessionManager): IncomingOrder[] {
 	const incoming: IncomingOrder[] = [];
-	for (const order of sm.incomingOrders.getSlots()) {
-		if (!order) continue;
+	sm.incomingOrders.getSlots().forEach((order, index) => {
+		if (!order) return;
 		incoming.push({
+			// Слоты 1-based: номер для `!взять N` (см. `command-parser`).
+			slot: index + 1,
 			id: order.id,
 			dishes: order.items.map((item) => item.item.name),
 			strictness: order.customer.strictness,
 			deadline: deadlineOf(order),
 		});
-	}
+	});
 	return incoming;
 }
 

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ORDER_CONFIG } from "../config";
+import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
+import type { IMenuItem } from "../types/menu_item";
 import type { IOrder } from "../types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
-import type { IMenuItem } from "../types/menu_item";
-import type { ISimEvents, ISimPort } from "./sim-port";
-import type { TaskIntent } from "./sim-dto";
-import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
-import { ORDER_CONFIG } from "../config";
 import { SessionManager } from "./session-manager";
+import type { TaskIntent } from "./sim-dto";
+import type { ISimEvents, ISimPort } from "./sim-port";
 
 const BURGER_IDS = [
 	INGREDIENTS.bunBottom.id,
@@ -199,6 +199,8 @@ describe("SessionManager: serve", () => {
 		expect(sm.getXp("alice")).toBe(-50);
 		expect(sm.getLastResult("alice")?.verdict).toBe("awful");
 	});
+
+	it.todo("после serve - заказа у исполнителя нет");
 });
 
 describe("SessionManager: таймаут", () => {

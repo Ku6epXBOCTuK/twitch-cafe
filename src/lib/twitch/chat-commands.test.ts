@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ORDER_CONFIG } from "../core/config";
+import { MENU_ITEMS } from "../core/data/menu";
+import { SessionManager } from "../core/game/session-manager";
 import type { IOrder } from "../core/types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
-import { MENU_ITEMS } from "../core/data/menu";
-import { ORDER_CONFIG } from "../core/config";
-import { SessionManager } from "../core/game/session-manager";
 import { connectSim } from "../sim/sync";
 import { processMessage } from "./chat-commands";
 import { ListSink } from "./command-sink";
