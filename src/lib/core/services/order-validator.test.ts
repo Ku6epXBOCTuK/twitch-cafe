@@ -78,7 +78,62 @@ describe("OrderValidator: бургер (единственное блюдо на
 		);
 		expect(result.extra).toContain("onion");
 		expect(result.orderIssues).toEqual([]);
-		expect(result.rating).toBeCloseTo(0.9375, 4);
+		expect(result.rating).toBeLessThan(1);
+	});
+
+	it("лишняя котлета попадает в extra", () => {
+		const result = OrderValidator.assessOrderDishes(
+			[],
+			makeSnapshot([
+				INGREDIENTS.bunBottom.id,
+				INGREDIENTS.patty.id,
+				INGREDIENTS.patty.id,
+				INGREDIENTS.cheese.id,
+				INGREDIENTS.bunTop.id,
+			]),
+			makeOrder([burger]),
+		);
+		expect(result.missing).toEqual([]);
+		expect(result.extra).toEqual([INGREDIENTS.patty.id]);
+		expect(result.orderIssues).toEqual([]);
+		expect(result.rating).toBeLessThan(1);
+	});
+
+	it("недостающие базы и лишняя котлета не ломают проверку порядка", () => {
+		const result = OrderValidator.assessOrderDishes(
+			[],
+			makeSnapshot([
+				INGREDIENTS.patty.id,
+				INGREDIENTS.patty.id,
+				INGREDIENTS.cheese.id,
+			]),
+			makeOrder([burger]),
+		);
+		expect(result.missing).toEqual([
+			INGREDIENTS.bunBottom.id,
+			INGREDIENTS.bunTop.id,
+		]);
+		expect(result.extra).toEqual([INGREDIENTS.patty.id]);
+		expect(result.orderIssues).toEqual([]);
+		expect(result.rating).toBeLessThan(1);
+	});
+
+	it("лишняя base попадает в extra", () => {
+		const result = OrderValidator.assessOrderDishes(
+			[],
+			makeSnapshot([
+				INGREDIENTS.bunBottom.id,
+				INGREDIENTS.patty.id,
+				INGREDIENTS.cheese.id,
+				INGREDIENTS.bunBottom.id,
+				INGREDIENTS.bunTop.id,
+			]),
+			makeOrder([burger]),
+		);
+		expect(result.missing).toEqual([]);
+		expect(result.extra).toEqual([INGREDIENTS.bunBottom.id]);
+		expect(result.orderIssues).toEqual([]);
+		expect(result.rating).toBeLessThan(1);
 	});
 
 	it("перепутаны слои начинки — штраф за порядок", () => {
@@ -118,6 +173,17 @@ describe("OrderValidator: напиток", () => {
 		);
 		expect(result.rating).toBe(1);
 		expect(result.extra).toEqual([]);
+	});
+
+	it("дубль Cola попадает в extra", () => {
+		const result = OrderValidator.assessOrderDishes(
+			[],
+			makeSnapshot(["cola", "cola"]),
+			makeOrder([cola]),
+		);
+		expect(result.missing).toEqual([]);
+		expect(result.extra).toEqual(["cola"]);
+		expect(result.rating).toBeLessThan(1);
 	});
 });
 

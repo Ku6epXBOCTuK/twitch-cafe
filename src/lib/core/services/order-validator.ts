@@ -26,25 +26,74 @@ function isComposite(item: IMenuItemBase): item is IMenuItemComposite {
 	return item.variant === MENU_ITEM_VARIANT.COMPOSITE;
 }
 
+interface LayerCountComparison {
+	missing: string[];
+	extra: string[];
+	matched: string[];
+}
+
+function compareLayerCounts(
+	expected: string[],
+	actual: string[],
+): LayerCountComparison {
+	const remaining = new Map<string, number>();
+	for (const id of expected) {
+		remaining.set(id, (remaining.get(id) ?? 0) + 1);
+	}
+
+	const extra: string[] = [];
+	const matched: string[] = [];
+	for (const id of actual) {
+		const count = remaining.get(id) ?? 0;
+		if (count === 0) {
+			extra.push(id);
+			continue;
+		}
+		remaining.set(id, count - 1);
+		matched.push(id);
+	}
+
+	const missing: string[] = [];
+	for (const id of expected) {
+		const count = remaining.get(id) ?? 0;
+		if (count > 0) {
+			missing.push(id);
+			remaining.set(id, count - 1);
+		}
+	}
+
+	return { missing, extra, matched };
+}
+
 function assessSimple(
 	item: IMenuItemBase,
 	layers: string[],
 	strictness: number,
 ): ItemAssessment {
-	if (!layers.includes(item.id)) {
-		return { rating: 0, missing: [item.id], extra: [], orderIssues: [] };
+	const comparison = compareLayerCounts([item.id], layers);
+	if (comparison.matched.length === 0) {
+		return {
+			rating: 0,
+			missing: comparison.missing,
+			extra: comparison.extra,
+			orderIssues: [],
+		};
 	}
-	const extra = layers.filter((id) => id !== item.id);
-	if (extra.length === 0) {
+	if (comparison.extra.length === 0) {
 		return { rating: 1, missing: [], extra: [], orderIssues: [] };
 	}
 	return {
 		rating: computeRating(
-			{ missing: 0, extra: extra.length, wrongOrder: 0, baseViolations: 0 },
+			{
+				missing: 0,
+				extra: comparison.extra.length,
+				wrongOrder: 0,
+				baseViolations: 0,
+			},
 			strictness,
 		),
 		missing: [],
-		extra,
+		extra: comparison.extra,
 		orderIssues: [],
 	};
 }
@@ -61,9 +110,7 @@ function assessComposite(
 			.filter((ing) => ing.category === "base")
 			.map((ing) => ing.id),
 	);
-
-	const missing = canonical.filter((id) => !layers.includes(id));
-	const extra = layers.filter((id) => !canonical.includes(id));
+	const { missing, extra, matched } = compareLayerCounts(canonical, layers);
 	const orderIssues: string[] = [];
 
 	let wrongOrder = 0;
@@ -71,7 +118,7 @@ function assessComposite(
 
 	if (recipe.fillingOrder === "ordered") {
 		const nonBaseCanonical = canonical.filter((id) => !baseIds.has(id));
-		const nonBaseInTray = layers.filter((id) => !baseIds.has(id));
+		const nonBaseInTray = matched.filter((id) => !baseIds.has(id));
 		for (
 			let i = 0;
 			i < Math.min(nonBaseCanonical.length, nonBaseInTray.length);
