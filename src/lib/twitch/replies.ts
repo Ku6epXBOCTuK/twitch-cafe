@@ -1,10 +1,10 @@
+import { Match } from "effect";
 import type { IOrder, IOrderItem } from "../core/types/order";
 import type { IMenuItem, IMenuItemComposite } from "../core/types/menu_item";
+import type { GameEvent } from "../core/game/game-event";
 import type { TaskAck } from "../core/game/sim-dto";
 import type { AssessmentResult } from "../core/services/order-validator";
 import { nameForId } from "./ingredients";
-
-// TODO: refactor to use events, and emit to receiver interface (bot, sse, etc)
 
 const VERDICT_TEXT: Record<AssessmentResult["verdict"], string> = {
 	perfect: "Идеально!",
@@ -154,4 +154,70 @@ export function replyNextLastItem(username: string): string {
 
 export function replyNextTrayEmpty(username: string): string {
 	return `${username}, поднос пуст — нечего запечатывать.`;
+}
+
+const renderGameEvent = Match.type<GameEvent>().pipe(
+	Match.when({ type: "not_in_game" }, (event) =>
+		replyNotInGame(event.username),
+	),
+	Match.when({ type: "no_active_order" }, (event) =>
+		replyNoActiveOrder(event.username),
+	),
+	Match.when({ type: "busy" }, (event) =>
+		event.operation === "take"
+			? replyTakeBusy(event.username)
+			: replyBusy(event.username),
+	),
+	Match.when({ type: "unknown_ingredient" }, (event) =>
+		replyUnknownIngredient(event.username, event.token),
+	),
+	Match.when({ type: "ingredient_added" }, (event) =>
+		replyPutAck(event.username, { ok: true }, event.ingredientId),
+	),
+	Match.when({ type: "tray_empty" }, (event) =>
+		event.operation === "serve"
+			? replyServeAck(event.username, { ok: false, reason: "tray_empty" })
+			: replyNextTrayEmpty(event.username),
+	),
+	Match.when({ type: "order_taken" }, (event) =>
+		replyTakeOk(event.username, event.order, event.slot),
+	),
+	Match.when({ type: "empty_slot" }, (event) =>
+		replyTakeEmptySlot(event.username),
+	),
+	Match.when({ type: "slot_required" }, (event) =>
+		replyTakeNoSlot(event.username),
+	),
+	Match.when({ type: "menu_state" }, (event) =>
+		replyMenu(event.username, event.order, [...event.trayLayers]),
+	),
+	Match.when({ type: "dish_sealed" }, (event) => replyNextAck(event.username)),
+	Match.when({ type: "last_item" }, (event) =>
+		replyNextLastItem(event.username),
+	),
+	Match.when({ type: "order_served" }, (event) =>
+		replyResult(event.username, event.assessment),
+	),
+	Match.when({ type: "tray_cleared" }, (event) =>
+		replyBinAck(event.username, { ok: true }),
+	),
+	Match.when({ type: "recipe_arg_required" }, (event) =>
+		replyRecipeNoArg(event.username),
+	),
+	Match.when({ type: "recipe_shown" }, (event) =>
+		replyRecipeOk(event.username, event.item),
+	),
+	Match.when({ type: "recipe_unknown" }, (event) =>
+		replyRecipeUnknown(event.username, event.token),
+	),
+	Match.when({ type: "order_expired" }, (event) => {
+		const xp =
+			event.xpDelta >= 0 ? `+${event.xpDelta} XP` : `${event.xpDelta} XP`;
+		return `${event.username}: заказ истёк. ${xp}.`;
+	}),
+	Match.exhaustive,
+);
+
+export function renderEvent(event: GameEvent): string {
+	return renderGameEvent(event);
 }

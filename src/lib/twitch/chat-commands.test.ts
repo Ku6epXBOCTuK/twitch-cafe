@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../core/config";
+import { INGREDIENTS } from "../core/data/menu";
+import type { GameEvent } from "../core/game/game-event";
 import { SessionManager } from "../core/game/session-manager";
 import type { IOrder } from "../core/types/order";
 import { ORDER_STATUS } from "../core/types/order";
@@ -23,7 +25,6 @@ function setup(makeOrder: () => IOrder = fixedBurgerOrder): SessionManager {
 	return sm;
 }
 
-/** Прогрев спавна. */
 function warmup(_sm: SessionManager): void {
 	vi.advanceTimersByTime(ORDER_CONFIG.SPAWN_INTERVAL_MS);
 }
@@ -34,8 +35,12 @@ function send(sm: SessionManager, raw: string, username = "alice"): ListSink {
 	return sink;
 }
 
-function expectReply(sink: ListSink): void {
-	expect(sink.messages).toHaveLength(1);
+function expectEvent(sink: ListSink, type: GameEvent["type"]): GameEvent {
+	expect(sink.events).toHaveLength(1);
+	const event = sink.events[0];
+	expect(event?.type).toBe(type);
+	if (!event) throw new Error("Expected a game event");
+	return event;
 }
 
 beforeEach(() => {
@@ -53,23 +58,34 @@ describe("беседа: полный игровой цикл", () => {
 		const res = sm.takeOrder(alice, 0);
 		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 		expect(res.order.status).toBe(ORDER_STATUS.PENDING);
-		expectReply(send(sm, "!menu"));
+
+		const menu = expectEvent(send(sm, "!menu"), "menu_state");
+		expect(menu.type === "menu_state" && menu.order.id).toBe(res.order.id);
 		expect(sm.getXp(alice)).toBe(0);
 
 		const xpBeforeServe = sm.getXp(alice);
-		expectReply(send(sm, "!serve"));
+		const empty = expectEvent(send(sm, "!serve"), "tray_empty");
+		expect(empty.type === "tray_empty" && empty.operation).toBe("serve");
 		expect(sm.getXp(alice)).toBe(xpBeforeServe);
 
 		processMessage("!put нижняя булочка", alice, sm, new ListSink());
-		expectReply(send(sm, "!put сыр"));
+		const ingredient = expectEvent(send(sm, "!put сыр"), "ingredient_added");
+		expect(
+			ingredient.type === "ingredient_added" && ingredient.ingredientId,
+		).toBe(INGREDIENTS.cheese.id);
 		processMessage("!put котлета", alice, sm, new ListSink());
 		processMessage("!put верхняя булочка", alice, sm, new ListSink());
 
-		expectReply(send(sm, "!serve"));
-		const result = sm.getLastResult(alice);
-		expect(result).not.toBeNull();
-		expect(result?.orderIssues.length).toBeGreaterThan(0);
-		expect(sm.getXp(alice)).toBe(result?.xpDelta);
+		const served = expectEvent(send(sm, "!serve"), "order_served");
+		expect(served.type === "order_served" && served.order.id).toBe(
+			res.order.id,
+		);
+		expect(
+			served.type === "order_served" && served.assessment.orderIssues.length,
+		).toBeGreaterThan(0);
+		expect(sm.getXp(alice)).toBe(
+			served.type === "order_served" ? served.assessment.xpDelta : undefined,
+		);
 	});
 
 	it("идеальная сборка завершает заказ и начисляет XP, авто-выдачи нет", () => {
@@ -81,28 +97,30 @@ describe("беседа: полный игровой цикл", () => {
 		for (const id of BURGER_IDS) {
 			processMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
-		expectReply(send(sm, "!serve"));
-		const result = sm.getLastResult(alice);
-		expect(result).not.toBeNull();
-		expect(sm.getXp(alice)).toBe(result?.xpDelta);
+		const served = expectEvent(send(sm, "!serve"), "order_served");
+		expect(served.type === "order_served" && served.order.status).toBe(
+			ORDER_STATUS.COMPLETED,
+		);
+		expect(sm.getXp(alice)).toBe(
+			served.type === "order_served" ? served.assessment.xpDelta : undefined,
+		);
 
 		warmup(sm);
 		const res = sm.takeOrder(alice, 0);
 		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
-		expect(res.order.status).toBe(ORDER_STATUS.PENDING);
-		expectReply(send(sm, "!menu"));
-		expect(sm.getTraySnapshot(alice)?.layers).toEqual([]);
+		const menu = expectEvent(send(sm, "!menu"), "menu_state");
+		expect(menu.type === "menu_state" && menu.trayLayers).toEqual([]);
 	});
 
-	it("!bin сбрасывает поднос в мусорку", () => {
+	it("!bin очищает поднос", () => {
 		const sm = setup();
 		warmup(sm);
 		sm.takeOrder("alice", 0);
 
 		processMessage("!put сыр", "alice", sm, new ListSink());
-		expectReply(send(sm, "!bin"));
+		expectEvent(send(sm, "!bin"), "tray_cleared");
 		expect(sm.getTraySnapshot("alice")?.layers).toEqual([]);
-		expectReply(send(sm, "!menu"));
+		expectEvent(send(sm, "!menu"), "menu_state");
 	});
 
 	it("повторное взятие при активном заказе — busy", () => {
@@ -111,23 +129,27 @@ describe("беседа: полный игровой цикл", () => {
 		warmup(sm);
 		sm.takeOrder(alice, 0);
 
-		expectReply(send(sm, "!взять 2"));
-		expectReply(send(sm, "!put железо"));
+		const busy = expectEvent(send(sm, "!взять 2"), "busy");
+		expect(busy.type === "busy" && busy.operation).toBe("take");
+		const unknown = expectEvent(send(sm, "!put железо"), "unknown_ingredient");
+		expect(unknown.type === "unknown_ingredient" && unknown.token).toBe(
+			"железо",
+		);
 	});
 
 	it("не игрок получает отказ", () => {
 		const sm = setup();
 		warmup(sm);
-		expectReply(send(sm, "!взять 3", "bob"));
-		expectReply(send(sm, "!put сыр", "bob"));
-		expectReply(send(sm, "!serve", "bob"));
+		expectEvent(send(sm, "!взять 3", "bob"), "empty_slot");
+		expectEvent(send(sm, "!put сыр", "bob"), "not_in_game");
+		expectEvent(send(sm, "!serve", "bob"), "not_in_game");
 	});
 
 	it("не-команда игнорируется: sink нетронут", () => {
 		const sm = setup();
-		expect(send(sm, "привет всем", "bob").messages).toEqual([]);
-		expect(send(sm, "", "bob").messages).toEqual([]);
-		expect(send(sm, "!join", "bob").messages).toEqual([]);
+		expect(send(sm, "привет всем", "bob").events).toEqual([]);
+		expect(send(sm, "", "bob").events).toEqual([]);
+		expect(send(sm, "!join", "bob").events).toEqual([]);
 	});
 
 	it("таймаут заказа — XP в минус, авто-выдачи нет", () => {
@@ -150,20 +172,20 @@ it("после serve новый заказ виден в !заказ и на exe
 	const alice = "alice";
 	warmup(sm);
 
-	expectReply(send(sm, "!взять 1", alice));
+	expectEvent(send(sm, "!взять 1", alice), "order_taken");
 	for (const id of BURGER_IDS) {
 		processMessage(`!put ${id}`, alice, sm, new ListSink());
 	}
-	expectReply(send(sm, "!serve", alice));
-	expectReply(send(sm, "!заказ", alice));
-	expectReply(send(sm, "!next", alice));
+	expectEvent(send(sm, "!serve", alice), "order_served");
+	expectEvent(send(sm, "!заказ", alice), "no_active_order");
+	expectEvent(send(sm, "!next", alice), "no_active_order");
 
 	sm.incomingOrders.spawn();
-	expectReply(send(sm, "!взять 1", alice));
+	expectEvent(send(sm, "!взять 1", alice), "order_taken");
 
 	const activeOrder = sm.getActiveOrder(alice);
 	expect(activeOrder?.items.map((entry) => entry.item.id)).toEqual([cola.id]);
-	expectReply(send(sm, "!заказ", alice));
+	expectEvent(send(sm, "!заказ", alice), "menu_state");
 
 	const execution = project(sm).execution;
 	expect(execution).toHaveLength(1);
@@ -172,39 +194,41 @@ it("после serve новый заказ виден в !заказ и на exe
 });
 
 describe("беседа: !взять", () => {
-	it("берёт заказ из слота и показывает его описание", () => {
+	it("берёт заказ из слота и показывает его состояние", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
 
-		expectReply(send(sm, "!взять 1"));
+		const event = expectEvent(send(sm, "!взять 1"), "order_taken");
+		expect(event.type === "order_taken" && event.slot).toBe(1);
 		expect(
-			sm.getActiveOrder("alice")?.items.map((entry) => entry.item.id),
+			event.type === "order_taken" &&
+				event.order.items.map((entry) => entry.item.id),
 		).toEqual([burger.id, cola.id]);
-		expect(sm.hasSession("alice")).toBe(true);
 	});
 
-	it("!взять без номера — подсказка", () => {
+	it("!взять без номера — slot_required", () => {
 		const sm = setup();
-		expectReply(send(sm, "!взять"));
+		expectEvent(send(sm, "!взять"), "slot_required");
 	});
 
-	it("!взять abc — подсказка", () => {
+	it("!взять abc — slot_required", () => {
 		const sm = setup();
-		expectReply(send(sm, "!взять abc"));
+		expectEvent(send(sm, "!взять abc"), "slot_required");
 	});
 
-	it("!взять на пустой слот — отказ", () => {
+	it("!взять на пустой слот — empty_slot", () => {
 		const sm = setup();
 		warmup(sm);
-		expectReply(send(sm, "!взять 3"));
+		const event = expectEvent(send(sm, "!взять 3"), "empty_slot");
+		expect(event.type === "empty_slot" && event.slot).toBe(3);
 	});
 
 	it("алиас !take работает", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
-		sm.incomingOrders.spawn(); // второй слот
-		expectReply(send(sm, "!take 2"));
-		expect(sm.getActiveOrder("alice")?.id).toBeDefined();
+		sm.incomingOrders.spawn();
+		const event = expectEvent(send(sm, "!take 2"), "order_taken");
+		expect(event.type === "order_taken" && event.slot).toBe(2);
 	});
 });
 
@@ -214,62 +238,71 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		const alice = "alice";
 		warmup(sm);
 
-		expectReply(send(sm, "!взять 1"));
-
+		expectEvent(send(sm, "!взять 1"), "order_taken");
 		for (const id of BURGER_IDS) {
 			processMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
-		expectReply(send(sm, "!next"));
+
+		const sealed = expectEvent(send(sm, "!next"), "dish_sealed");
+		expect(sealed.type === "dish_sealed" && sealed.sealedLayers).toEqual(
+			BURGER_IDS,
+		);
+		expect(sealed.type === "dish_sealed" && sealed.nextItemIndex).toBe(1);
 		expect(sm.getTraySnapshot(alice)?.layers).toEqual([]);
 
 		processMessage("!put кола", alice, sm, new ListSink());
-		expectReply(send(sm, "!serve"));
-		const result = sm.getLastResult(alice);
-		expect(result).not.toBeNull();
-		expect(sm.getXp(alice)).toBe(result?.xpDelta);
+		const served = expectEvent(send(sm, "!serve"), "order_served");
+		expect(sm.getXp(alice)).toBe(
+			served.type === "order_served" ? served.assessment.xpDelta : undefined,
+		);
 
 		warmup(sm);
 		sm.incomingOrders.spawn();
-		expectReply(send(sm, "!взять 2"));
+		expectEvent(send(sm, "!взять 2"), "order_taken");
 	});
 
-	it("!next без заказа — «не в игре»", () => {
+	it("!next без заказа — not_in_game", () => {
 		const sm = setup();
-		expectReply(send(sm, "!next", "bob"));
+		expectEvent(send(sm, "!next", "bob"), "not_in_game");
 	});
 
-	it("!next на последнем блюде — отказ", () => {
+	it("!next на последнем блюде — last_item", () => {
 		const sm = setup();
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-
 		processMessage("!put сыр", "alice", sm, new ListSink());
-		expectReply(send(sm, "!next"));
+		expectEvent(send(sm, "!next"), "last_item");
 	});
 
-	it("!next на пустом подносе — отказ", () => {
+	it("!next на пустом подносе — tray_empty", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-		expectReply(send(sm, "!next"));
+		const event = expectEvent(send(sm, "!next"), "tray_empty");
+		expect(event.type === "tray_empty" && event.operation).toBe("next");
 	});
 });
 
 describe("беседа: !рецепт", () => {
 	it("показывает рецепт и запоминает его в RecipeBook", () => {
 		const sm = setup();
-		expectReply(send(sm, "!рецепт бургер"));
+		const event = expectEvent(send(sm, "!рецепт бургер"), "recipe_shown");
+		expect(event.type === "recipe_shown" && event.item.id).toBe(burger.id);
 		expect(sm.recipeBook.getCurrent()?.id).toBe(burger.id);
 	});
 
-	it("!рецепт без аргумента — подсказка", () => {
+	it("!рецепт без аргумента — recipe_arg_required", () => {
 		const sm = setup();
-		expectReply(send(sm, "!рецепт"));
+		expectEvent(send(sm, "!рецепт"), "recipe_arg_required");
 	});
 
-	it("неизвестное блюдо — отказ", () => {
+	it("неизвестное блюдо — recipe_unknown", () => {
 		const sm = setup();
-		expectReply(send(sm, "!рецепт абракадабра"));
+		const event = expectEvent(
+			send(sm, "!рецепт абракадабра"),
+			"recipe_unknown",
+		);
+		expect(event.type === "recipe_unknown" && event.token).toBe("абракадабра");
 	});
 });
 
@@ -278,7 +311,7 @@ describe("беседа: алиасы !заказ/!order", () => {
 		const sm = setup();
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-		expectReply(send(sm, "!заказ"));
-		expectReply(send(sm, "!order"));
+		expectEvent(send(sm, "!заказ"), "menu_state");
+		expectEvent(send(sm, "!order"), "menu_state");
 	});
 });

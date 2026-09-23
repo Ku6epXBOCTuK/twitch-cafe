@@ -1,19 +1,19 @@
 import type { ChatClient } from "@twurple/chat";
+import type { GameEvent } from "../core/game/game-event";
+import { renderEvent } from "./replies";
 
-/** Куда processMessage отправляет ответы: чат сейчас, SSE-оверлей позже. */
 export interface CommandSink {
-	reply(message: string): void;
+	emit(event: GameEvent): void;
 }
 
-/** Прод: ответы бота в канал Twitch. */
 export class ChatSink implements CommandSink {
 	constructor(
 		private readonly client: ChatClient,
 		private readonly channel: string,
 	) {}
 
-	reply(message: string): void {
-		void this.client.say(this.channel, message).catch((err) => {
+	emit(event: GameEvent): void {
+		void this.client.say(this.channel, renderEvent(event)).catch((err) => {
 			console.error(
 				`[chat] не удалось отправить ответ в ${this.channel}:`,
 				err,
@@ -22,11 +22,10 @@ export class ChatSink implements CommandSink {
 	}
 }
 
-/** Тесты: собирает реплики в массив для проверок. */
 export class ListSink implements CommandSink {
-	readonly messages: string[] = [];
+	readonly events: GameEvent[] = [];
 
-	reply(message: string): void {
-		this.messages.push(message);
+	emit(event: GameEvent): void {
+		this.events.push(event);
 	}
 }

@@ -259,13 +259,13 @@ interface GameRuntime {
 - добавить отдельные проверки scoring policy;
 - в `SessionManager` и SIM-тестах проверять состояние, transition и XP delta, а
   не повторять весь баланс;
-- добавить отдельный contract-тест `replies.ts`, а сценарии чата оставить на
-  маршрутизацию и наличие ответа;
+- заменить текстовые contract-тесты `replies.ts` на проверки `GameEvent`;
+  сценарии чата проверяют тип события, payload и изменение состояния;
 - подготовить тестовый запуск Effect через `Effect.runPromise` и `TestClock`.
 
 **Готово:** тесты можно запускать без реального ожидания времени; policy-тесты
-один раз фиксируют XP/verdict; presentation-тесты изолированы; все существующие
-сценарии сохранены.
+один раз фиксируют XP/verdict; `GameEvent` проверяется отдельно от renderer; все
+существующие сценарии сохранены.
 
 ### Этап 2. Effect substrate и composition root
 
@@ -317,8 +317,8 @@ interface GameRuntime {
 - заменить проверку дубля `frozenAt` на контракт terminal transition плюс
   `orderId`/sequence события;
 - отдельно обработать гонку `serve` с timeout;
-- сохранить XP как результат доменной операции, а не как побочный эффект
-  presentation-теста;
+- сохранить XP как результат доменной операции, а presentation-контракт
+  проверять через `GameEvent`, если он понадобится;
 - добавить fault-injection сценарии: late serve, duplicate serve, timeout после
   serve, stop во timeout.
 
@@ -334,13 +334,15 @@ interface GameRuntime {
 
 - сделать `processMessage` возвращающим `Effect` или запускать его через единый
   command service;
-- сделать `CommandSink.reply` Effect-aware только в той части, где нужен I/O;
+- перевести `CommandSink` на `emit(GameEvent)`; `replies.ts` оставить временным
+  Chat renderer, а не источником игрового контракта;
 - преобразовать `TaskAck` consumers в success/failure branches Effect;
 - отделить expected failure-to-reply от defect-to-logging;
 - подключить Twurple callback через fork/run boundary с гарантированной
   обработкой rejection;
 - добавить correlation id к команде, username и order id;
-- сохранить тексты реплик в presentation contract-тестах.
+- проверять в command-тестах только `GameEvent`, payload и состояние; не
+  фиксировать язык, регистр или форматирование текста.
 
 **Готово:** любая команда завершает Effect явным ветвлением; внутренний дефект
 не приводит к тихому `return`; callback не оставляет необработанный Promise.
@@ -372,7 +374,9 @@ interface GameRuntime {
 - решить, остаётся ли polling совместимым адаптером или переходит на stream;
 - при stream-варианте использовать scoped subscription и cleanup при disconnect;
 - не вычислять игровые решения на frontend;
-- сохранить независимый schema contract теста для overlay snapshot.
+- сохранить независимый schema contract теста для overlay snapshot;
+- после отключения чата удалить `replies.ts`, а OBS/SSE перевести на прямые
+  `GameEvent` без текстового renderer.
 
 **Готово:** закрытие SSE-клиента освобождает ресурс; snapshot соответствует
 контракту независимо от способа доставки.
@@ -423,9 +427,9 @@ interface GameRuntime {
 - `ORDER_CONFIG`, slot count и time limit берутся из production config.
 - Названия блюд и ингредиенты собираются из menu/recipe data, если тест не
   проверяет конкретный пользовательский контракт.
-- Точные русские реплики проверяются в `replies.test.ts`.
-- Chat integration проверяет маршрутизацию, наличие ответа и изменение
-  состояния.
+- Тексты реплик не являются game contract: `replies.ts` — временный renderer,
+  который можно удалить вместе с chat-доставкой.
+- Chat integration проверяет `GameEvent`, payload и изменение состояния.
 
 ### Обязательные reliability-тесты
 
@@ -512,7 +516,8 @@ interface GameRuntime {
 - [ ] XP и terminal state меняются ровно один раз.
 - [ ] Chat, SIM и startup failures не теряются.
 - [ ] Время и random генерация детерминированы в тестах.
-- [ ] Точные XP/verdict/text проверяются в отдельных policy/presentation тестах.
+- [ ] Точные XP/verdict проверяются в scoring policy-тесте, а command-тесты
+      проверяют `GameEvent` и payload без текстовых snapshots.
 - [ ] SSE/overlay имеет понятный lifecycle.
 - [ ] Выполнены `pnpm test`, `pnpm check`, `pnpm lint` и `pnpm build`.
 - [ ] Есть production smoke/fault-injection сценарий.
