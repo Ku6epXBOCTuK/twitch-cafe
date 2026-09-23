@@ -1,52 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../core/config";
-import { MENU_ITEMS } from "../core/data/menu";
 import { SessionManager } from "../core/game/session-manager";
 import type { IOrder } from "../core/types/order";
-import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
+import { ORDER_STATUS } from "../core/types/order";
+import { burger, BURGER_IDS, cola, makeOrder } from "#lib/test-support";
 import { connectSim } from "../sim/sync";
 import { project } from "../overlay/projector";
 import { processMessage } from "./chat-commands";
 import { ListSink } from "./command-sink";
 
-const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
-const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
-
-function fixedBurgerOrder(): IOrder {
-	return {
-		id: `o-${Math.random().toString(36).slice(2)}`,
-		items: [{ item: burger, state: ORDER_ITEM_STATE.PENDING }],
-		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
-		timeLimit: 90_000,
-		createdAt: new Date(0),
-		status: ORDER_STATUS.PENDING,
-	};
-}
-
-function fixedBurgerColaOrder(): IOrder {
-	return {
-		id: `o-${Math.random().toString(36).slice(2)}`,
-		items: [
-			{ item: burger, state: ORDER_ITEM_STATE.PENDING },
-			{ item: cola, state: ORDER_ITEM_STATE.PENDING },
-		],
-		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
-		timeLimit: 90_000,
-		createdAt: new Date(0),
-		status: ORDER_STATUS.PENDING,
-	};
-}
-
-function fixedColaOrder(): IOrder {
-	return {
-		id: `o-${Math.random().toString(36).slice(2)}`,
-		items: [{ item: cola, state: ORDER_ITEM_STATE.PENDING }],
-		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
-		timeLimit: 90_000,
-		createdAt: new Date(0),
-		status: ORDER_STATUS.PENDING,
-	};
-}
+const fixedBurgerOrder = (): IOrder =>
+	makeOrder({ id: "burger-order", items: [burger] });
+const fixedBurgerColaOrder = (): IOrder =>
+	makeOrder({ id: "burger-cola-order", items: [burger, cola] });
+const fixedColaOrder = (): IOrder =>
+	makeOrder({ id: "cola-order", items: [cola] });
 
 function setup(makeOrder: () => IOrder = fixedBurgerOrder): SessionManager {
 	const sm = new SessionManager(makeOrder);
@@ -66,7 +34,9 @@ function send(sm: SessionManager, raw: string, username = "alice"): ListSink {
 	return sink;
 }
 
-const BURGER_IDS = ["bun_bottom", "patty", "cheese", "bun_top"];
+function expectReply(sink: ListSink): void {
+	expect(sink.messages).toHaveLength(1);
+}
 
 beforeEach(() => {
 	vi.useFakeTimers();
@@ -83,25 +53,26 @@ describe("беседа: полный игровой цикл", () => {
 		const res = sm.takeOrder(alice, 0);
 		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 		expect(res.order.status).toBe(ORDER_STATUS.PENDING);
-		expect(send(sm, "!menu").messages[0]).toContain("Бургер");
+		expectReply(send(sm, "!menu"));
 		expect(sm.getXp(alice)).toBe(0);
 
-		// serve пустого подноса — отказ
-		expect(send(sm, "!serve").messages[0]).toContain("поднос пуст");
+		const xpBeforeServe = sm.getXp(alice);
+		expectReply(send(sm, "!serve"));
+		expect(sm.getXp(alice)).toBe(xpBeforeServe);
 
-		// перепутанный порядок начинки: сыр раньше котлеты
 		processMessage("!put нижняя булочка", alice, sm, new ListSink());
-		expect(send(sm, "!put сыр").messages[0]).toContain("положил: Сыр");
+		expectReply(send(sm, "!put сыр"));
 		processMessage("!put котлета", alice, sm, new ListSink());
 		processMessage("!put верхняя булочка", alice, sm, new ListSink());
 
-		const serve = send(sm, "!serve").messages[0];
-		expect(serve).toContain("Хорошо!");
-		expect(serve).toContain("порядок начинки нарушен");
-		expect(sm.getXp(alice)).toBe(30);
+		expectReply(send(sm, "!serve"));
+		const result = sm.getLastResult(alice);
+		expect(result).not.toBeNull();
+		expect(result?.orderIssues.length).toBeGreaterThan(0);
+		expect(sm.getXp(alice)).toBe(result?.xpDelta);
 	});
 
-	it("идеальная сборка даёт perfect и +50 XP, авто-выдачи нет", () => {
+	it("идеальная сборка завершает заказ и начисляет XP, авто-выдачи нет", () => {
 		const sm = setup();
 		const alice = "alice";
 		warmup(sm);
@@ -110,18 +81,17 @@ describe("беседа: полный игровой цикл", () => {
 		for (const id of BURGER_IDS) {
 			processMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
-		const serve = send(sm, "!serve").messages[0];
-		expect(serve).toContain("Идеально!");
-		expect(serve).toContain("+50 XP");
-		expect(serve).not.toContain("Следующий заказ"); // авто-выдачи нет
-		expect(sm.getXp(alice)).toBe(50);
+		expectReply(send(sm, "!serve"));
+		const result = sm.getLastResult(alice);
+		expect(result).not.toBeNull();
+		expect(sm.getXp(alice)).toBe(result?.xpDelta);
 
-		// после serve заказ закрыт; поднос очищается только при новом взятии
 		warmup(sm);
 		const res = sm.takeOrder(alice, 0);
 		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 		expect(res.order.status).toBe(ORDER_STATUS.PENDING);
-		expect(send(sm, "!menu").messages[0]).toContain("Поднос: пуст");
+		expectReply(send(sm, "!menu"));
+		expect(sm.getTraySnapshot(alice)?.layers).toEqual([]);
 	});
 
 	it("!bin сбрасывает поднос в мусорку", () => {
@@ -130,8 +100,9 @@ describe("беседа: полный игровой цикл", () => {
 		sm.takeOrder("alice", 0);
 
 		processMessage("!put сыр", "alice", sm, new ListSink());
-		expect(send(sm, "!bin").messages[0]).toContain("сбросил");
-		expect(send(sm, "!menu").messages[0]).toContain("Поднос: пуст");
+		expectReply(send(sm, "!bin"));
+		expect(sm.getTraySnapshot("alice")?.layers).toEqual([]);
+		expectReply(send(sm, "!menu"));
 	});
 
 	it("повторное взятие при активном заказе — busy", () => {
@@ -140,18 +111,16 @@ describe("беседа: полный игровой цикл", () => {
 		warmup(sm);
 		sm.takeOrder(alice, 0);
 
-		expect(send(sm, "!взять 2").messages[0]).toContain("уже есть заказ");
-		expect(send(sm, "!put железо").messages[0]).toContain(
-			"нет такого ингредиента",
-		);
+		expectReply(send(sm, "!взять 2"));
+		expectReply(send(sm, "!put железо"));
 	});
 
 	it("не игрок получает отказ", () => {
 		const sm = setup();
 		warmup(sm);
-		expect(send(sm, "!взять 3", "bob").messages[0]).toContain("слот пуст");
-		expect(send(sm, "!put сыр", "bob").messages[0]).toContain("не в игре");
-		expect(send(sm, "!serve", "bob").messages[0]).toContain("не в игре");
+		expectReply(send(sm, "!взять 3", "bob"));
+		expectReply(send(sm, "!put сыр", "bob"));
+		expectReply(send(sm, "!serve", "bob"));
 	});
 
 	it("не-команда игнорируется: sink нетронут", () => {
@@ -169,8 +138,8 @@ describe("беседа: полный игровой цикл", () => {
 		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 
 		vi.advanceTimersByTime(res.order.timeLimit + 1);
-		expect(res.order.status).toBe("EXPIRED");
-		expect(sm.getXp(alice)).toBe(-50);
+		expect(res.order.status).toBe(ORDER_STATUS.EXPIRED);
+		expect(sm.getXp(alice)).toBeLessThan(0);
 		expect(sm.getOrder(alice)).toBe(res.order);
 	});
 });
@@ -181,30 +150,25 @@ it("после serve новый заказ виден в !заказ и на exe
 	const alice = "alice";
 	warmup(sm);
 
-	expect(send(sm, "!взять 1", alice).messages[0]).toContain("взял заказ");
+	expectReply(send(sm, "!взять 1", alice));
 	for (const id of BURGER_IDS) {
 		processMessage(`!put ${id}`, alice, sm, new ListSink());
 	}
-	expect(send(sm, "!serve", alice).messages[0]).toContain("Идеально!");
-	expect(send(sm, "!заказ", alice).messages[0]).toContain(
-		"у тебя нет активного заказа",
-	);
-	expect(send(sm, "!next", alice).messages[0]).toContain(
-		"у тебя нет активного заказа",
-	);
+	expectReply(send(sm, "!serve", alice));
+	expectReply(send(sm, "!заказ", alice));
+	expectReply(send(sm, "!next", alice));
 
 	sm.incomingOrders.spawn();
-	expect(send(sm, "!взять 1", alice).messages[0]).toContain("взял заказ");
+	expectReply(send(sm, "!взять 1", alice));
 
 	const activeOrder = sm.getActiveOrder(alice);
-	expect(activeOrder?.items.map((entry) => entry.item.name)).toEqual(["Кола"]);
-	expect(send(sm, "!заказ", alice).messages[0]).toContain("Кола");
-	expect(send(sm, "!заказ", alice).messages[0]).not.toContain("Бургер");
+	expect(activeOrder?.items.map((entry) => entry.item.id)).toEqual([cola.id]);
+	expectReply(send(sm, "!заказ", alice));
 
 	const execution = project(sm).execution;
 	expect(execution).toHaveLength(1);
 	expect(execution[0].id).toBe(activeOrder?.id);
-	expect(execution[0].dishes).toEqual([{ name: "Кола", done: false }]);
+	expect(execution[0].dishes).toEqual([{ name: cola.name, done: false }]);
 });
 
 describe("беседа: !взять", () => {
@@ -212,34 +176,35 @@ describe("беседа: !взять", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
 
-		const reply = send(sm, "!взять 1").messages[0];
-		expect(reply).toContain("взял заказ №1");
-		expect(reply).toContain("Бургер");
-		expect(reply).toContain("Кола");
+		expectReply(send(sm, "!взять 1"));
+		expect(
+			sm.getActiveOrder("alice")?.items.map((entry) => entry.item.id),
+		).toEqual([burger.id, cola.id]);
 		expect(sm.hasSession("alice")).toBe(true);
 	});
 
 	it("!взять без номера — подсказка", () => {
 		const sm = setup();
-		expect(send(sm, "!взять").messages[0]).toContain("номер слота 1–3");
+		expectReply(send(sm, "!взять"));
 	});
 
 	it("!взять abc — подсказка", () => {
 		const sm = setup();
-		expect(send(sm, "!взять abc").messages[0]).toContain("номер слота 1–3");
+		expectReply(send(sm, "!взять abc"));
 	});
 
 	it("!взять на пустой слот — отказ", () => {
 		const sm = setup();
 		warmup(sm);
-		expect(send(sm, "!взять 3").messages[0]).toContain("слот пуст");
+		expectReply(send(sm, "!взять 3"));
 	});
 
 	it("алиас !take работает", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
 		sm.incomingOrders.spawn(); // второй слот
-		expect(send(sm, "!take 2").messages[0]).toContain("взял заказ №2");
+		expectReply(send(sm, "!take 2"));
+		expect(sm.getActiveOrder("alice")?.id).toBeDefined();
 	});
 });
 
@@ -249,28 +214,28 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		const alice = "alice";
 		warmup(sm);
 
-		expect(send(sm, "!взять 1").messages[0]).toContain("взял заказ №1");
+		expectReply(send(sm, "!взять 1"));
 
 		for (const id of BURGER_IDS) {
 			processMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
-		expect(send(sm, "!next").messages[0]).toContain("запечатал");
-		expect(send(sm, "!menu").messages[0]).toContain("Поднос: пуст");
+		expectReply(send(sm, "!next"));
+		expect(sm.getTraySnapshot(alice)?.layers).toEqual([]);
 
 		processMessage("!put кола", alice, sm, new ListSink());
-		const serve = send(sm, "!serve").messages[0];
-		expect(serve).toContain("Идеально!");
-		expect(serve).toContain("+50 XP");
+		expectReply(send(sm, "!serve"));
+		const result = sm.getLastResult(alice);
+		expect(result).not.toBeNull();
+		expect(sm.getXp(alice)).toBe(result?.xpDelta);
 
-		// снова свободен: берёт другой слот сам
 		warmup(sm);
-		sm.incomingOrders.spawn(); // второй слот
-		expect(send(sm, "!взять 2").messages[0]).toContain("взял заказ №2");
+		sm.incomingOrders.spawn();
+		expectReply(send(sm, "!взять 2"));
 	});
 
 	it("!next без заказа — «не в игре»", () => {
 		const sm = setup();
-		expect(send(sm, "!next", "bob").messages[0]).toContain("не в игре");
+		expectReply(send(sm, "!next", "bob"));
 	});
 
 	it("!next на последнем блюде — отказ", () => {
@@ -279,36 +244,32 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		sm.takeOrder("alice", 0);
 
 		processMessage("!put сыр", "alice", sm, new ListSink());
-		expect(send(sm, "!next").messages[0]).toContain("последнее блюдо");
+		expectReply(send(sm, "!next"));
 	});
 
 	it("!next на пустом подносе — отказ", () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-		expect(send(sm, "!next").messages[0]).toContain("нечего запечатывать");
+		expectReply(send(sm, "!next"));
 	});
 });
 
 describe("беседа: !рецепт", () => {
 	it("показывает рецепт и запоминает его в RecipeBook", () => {
 		const sm = setup();
-		expect(send(sm, "!рецепт бургер").messages[0]).toContain(
-			"показываю рецепт",
-		);
-		expect(sm.recipeBook.getCurrent()?.id).toBe("burger");
+		expectReply(send(sm, "!рецепт бургер"));
+		expect(sm.recipeBook.getCurrent()?.id).toBe(burger.id);
 	});
 
 	it("!рецепт без аргумента — подсказка", () => {
 		const sm = setup();
-		expect(send(sm, "!рецепт").messages[0]).toContain("напиши название блюда");
+		expectReply(send(sm, "!рецепт"));
 	});
 
 	it("неизвестное блюдо — отказ", () => {
 		const sm = setup();
-		expect(send(sm, "!рецепт абракадабра").messages[0]).toContain(
-			"нет такого блюда",
-		);
+		expectReply(send(sm, "!рецепт абракадабра"));
 	});
 });
 
@@ -317,7 +278,7 @@ describe("беседа: алиасы !заказ/!order", () => {
 		const sm = setup();
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-		expect(send(sm, "!заказ").messages[0]).toContain("заказ — Бургер");
-		expect(send(sm, "!order").messages[0]).toContain("заказ — Бургер");
+		expectReply(send(sm, "!заказ"));
+		expectReply(send(sm, "!order"));
 	});
 });

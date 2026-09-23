@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MENU_ITEMS } from "../data/menu";
+import { burger, cola } from "#lib/test-support";
 import { RecipeBook } from "./recipe-book";
-
-const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
-const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
 
 describe("RecipeBook", () => {
 	it("show ok: возвращает блюдо и запоминает его", () => {

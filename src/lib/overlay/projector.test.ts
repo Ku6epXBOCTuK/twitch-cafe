@@ -1,83 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IMenuItem } from "../core/types/menu_item";
-import type { IOrder } from "../core/types/order";
-import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
-import { MENU_ITEMS } from "../core/data/menu";
-import type { ISimEvents, ISimPort } from "../core/game/sim-port";
-import type { TaskIntent } from "../core/game/sim-dto";
+import { ORDER_CONFIG } from "../core/config";
+import {
+	burger,
+	BURGER_IDS,
+	cola,
+	makeOrder,
+	RecordingPort,
+} from "#lib/test-support";
 import { SessionManager } from "../core/game/session-manager";
 import { project } from "./projector";
 
-const BURGER = MENU_ITEMS.find((m) => m.id === "burger")!;
-const COLA = MENU_ITEMS.find((m) => m.id === "cola")!;
-const BURGER_IDS = ["bun_bottom", "patty", "cheese", "bun_top"];
-
 const CREATED_AT_MS = 1000;
-const TIME_LIMIT_MS = 90_000;
-const DEADLINE_MS = CREATED_AT_MS + TIME_LIMIT_MS;
+const DEADLINE_MS = CREATED_AT_MS + ORDER_CONFIG.ORDER_TIME_LIMIT_MS;
 
-function makeOrder(id: string, items: IMenuItem[], strictness = 0.5): IOrder {
-	return {
-		id,
-		items: items.map((item) => ({ item, state: ORDER_ITEM_STATE.PENDING })),
-		customer: { id: "normal", name: "Обычный", strictness },
-		timeLimit: TIME_LIMIT_MS,
-		createdAt: new Date(CREATED_AT_MS),
-		status: ORDER_STATUS.PENDING,
-	};
-}
-
-/** Порт-заглушка: копит слои подноса, serve отдаёт снапшот в SM. */
-class RecordingPort implements ISimPort {
-	events: ISimEvents | null = null;
-	trayLayers: string[] = [];
-
-	attach(events: ISimEvents): void {
-		this.events = events;
-	}
-
-	startOrder(): void {}
-
-	enqueueTask(username: string, intent: TaskIntent) {
-		if (intent.kind === "serve") {
-			this.events?.onActionCompleted({
-				type: "ACTION_COMPLETED",
-				username,
-				finishedAt: Date.now(),
-				action: { kind: "serve", targetId: 0, startedAt: 0 },
-				tray: {
-					username,
-					layers: [...this.trayLayers],
-					frozenAt: Date.now(),
-				},
-			});
-			this.trayLayers = [];
-			return { ok: true as const };
-		}
-		if (intent.kind === "bin") this.trayLayers = [];
-		if (intent.kind === "put") this.trayLayers.push(intent.ingredientId);
-		return { ok: true as const };
-	}
-
-	cancelOrder(): void {}
-
-	clearTray(): void {
-		this.trayLayers = [];
-	}
-
-	despawn(): void {}
-
-	getTraySnapshot(username: string) {
-		return { username, layers: [...this.trayLayers], frozenAt: 0 };
-	}
-
-	getSnapshot() {
-		return { simTime: 0, characters: [] };
-	}
-}
-
-/** SM с фиксированной очередью заказов: `spawn()` берёт следующий. */
-function setup(orders: IOrder[]) {
+function setup(orders: ReturnType<typeof makeOrder>[]) {
 	const port = new RecordingPort();
 	let index = 0;
 	const sm = new SessionManager(() => orders[index++]!);
@@ -96,8 +32,18 @@ afterEach(() => {
 describe("project: incoming", () => {
 	it("непустые слоты → имена блюд, strictness, deadline", () => {
 		const { sm } = setup([
-			makeOrder("o1", [BURGER], 0.2),
-			makeOrder("o2", [COLA, COLA], 0.9),
+			makeOrder({
+				id: "o1",
+				items: [burger],
+				strictness: 0.2,
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+			makeOrder({
+				id: "o2",
+				items: [cola, cola],
+				strictness: 0.9,
+				createdAt: new Date(CREATED_AT_MS),
+			}),
 		]);
 		sm.incomingOrders.spawn();
 		sm.incomingOrders.spawn();
@@ -121,7 +67,18 @@ describe("project: incoming", () => {
 	});
 
 	it("взятый слот исчезает из incoming, номера слотов не сдвигаются", () => {
-		const { sm } = setup([makeOrder("o1", [BURGER]), makeOrder("o2", [COLA])]);
+		const { sm } = setup([
+			makeOrder({
+				id: "o1",
+				items: [burger],
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+			makeOrder({
+				id: "o2",
+				items: [cola],
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+		]);
 		sm.incomingOrders.spawn();
 		sm.incomingOrders.spawn();
 
@@ -140,7 +97,13 @@ describe("project: incoming", () => {
 
 describe("project: execution и players", () => {
 	it("сессия с двумя блюдами: dishes и order до/после !next", () => {
-		const { port, sm } = setup([makeOrder("o1", [BURGER, COLA])]);
+		const { port, sm } = setup([
+			makeOrder({
+				id: "o1",
+				items: [burger, cola],
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+		]);
 		sm.incomingOrders.spawn();
 		sm.takeOrder("alice", 0);
 
@@ -185,12 +148,18 @@ describe("project: execution и players", () => {
 	});
 
 	it("после serve: исполнителя нет, игрок остаётся с order: null", () => {
-		const { port, sm } = setup([makeOrder("o1", [BURGER, COLA])]);
+		const { port, sm } = setup([
+			makeOrder({
+				id: "o1",
+				items: [burger, cola],
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+		]);
 		sm.incomingOrders.spawn();
 		sm.takeOrder("alice", 0);
 		port.trayLayers = BURGER_IDS;
 		sm.nextDish("alice");
-		port.trayLayers = ["cola"];
+		port.trayLayers = [cola.id];
 
 		expect(sm.serve("alice")).toEqual({ ok: true });
 		const snapshot = project(sm);
@@ -201,7 +170,13 @@ describe("project: execution и players", () => {
 	});
 
 	it("после timeout: исполнителя нет, игрок остаётся с order: null", () => {
-		const { sm } = setup([makeOrder("o1", [COLA])]);
+		const { sm } = setup([
+			makeOrder({
+				id: "o1",
+				items: [cola],
+				createdAt: new Date(CREATED_AT_MS),
+			}),
+		]);
 		sm.incomingOrders.spawn();
 		const taken = sm.takeOrder("alice", 0);
 		if (!taken.ok) throw new Error("takeOrder failed");
@@ -221,14 +196,14 @@ describe("project: recipe", () => {
 
 		expect(project(sm).recipe).toBeNull();
 
-		sm.recipeBook.show(BURGER);
+		sm.recipeBook.show(burger);
 		expect(project(sm).recipe).toEqual({
 			id: "burger",
 			name: "Бургер",
 			ingredients: ["Нижняя булочка", "Котлета", "Сыр", "Верхняя булочка"],
 		});
 
-		sm.recipeBook.show(COLA);
+		sm.recipeBook.show(cola);
 		expect(project(sm).recipe).toEqual({
 			id: "cola",
 			name: "Кола",

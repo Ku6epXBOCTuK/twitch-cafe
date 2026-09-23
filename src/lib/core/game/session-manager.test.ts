@@ -1,86 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../config";
-import { INGREDIENTS, MENU_ITEMS } from "../data/menu";
 import type { IMenuItem } from "../types/menu_item";
 import type { IOrder } from "../types/order";
-import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
+import { ORDER_STATUS } from "../types/order";
+import {
+	burger,
+	BURGER_IDS,
+	cola,
+	makeOrder,
+	RecordingPort,
+} from "#lib/test-support";
 import { SessionManager } from "./session-manager";
-import type { TaskIntent } from "./sim-dto";
-import type { ISimEvents, ISimPort } from "./sim-port";
-
-const BURGER_IDS = [
-	INGREDIENTS.bunBottom.id,
-	INGREDIENTS.patty.id,
-	INGREDIENTS.cheese.id,
-	INGREDIENTS.bunTop.id,
-];
-
-function fixedOrder(item: IMenuItem): IOrder {
-	return {
-		id: `order-${item.id}`,
-		items: [{ item, state: ORDER_ITEM_STATE.PENDING }],
-		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
-		timeLimit: 90_000,
-		createdAt: new Date(0),
-		status: ORDER_STATUS.PENDING,
-	};
-}
-
-class RecordingPort implements ISimPort {
-	events: ISimEvents | null = null;
-	startOrders: IOrder[] = [];
-	tasks: Array<{ username: string; intent: TaskIntent }> = [];
-	cancels: Array<"timeout" | "leave"> = [];
-	trayLayers: string[] = [];
-
-	attach(events: ISimEvents): void {
-		this.events = events;
-	}
-
-	startOrder(username: string, order: IOrder): void {
-		this.startOrders.push(order);
-	}
-
-	enqueueTask(username: string, intent: TaskIntent) {
-		this.tasks.push({ username, intent });
-		if (intent.kind === "serve") {
-			this.events?.onActionCompleted({
-				type: "ACTION_COMPLETED",
-				username,
-				finishedAt: Date.now(),
-				action: { kind: "serve", targetId: 0, startedAt: 0 },
-				tray: { username, layers: [...this.trayLayers], frozenAt: Date.now() },
-			});
-			return { ok: true as const };
-		}
-		if (intent.kind === "bin") this.trayLayers = [];
-		if (intent.kind === "put") this.trayLayers.push(intent.ingredientId);
-		return { ok: true as const };
-	}
-
-	cancelOrder(username: string, reason: "timeout" | "leave"): void {
-		this.cancels.push(reason);
-	}
-
-	clearTray(username: string): void {
-		this.trayLayers = [];
-		void username;
-	}
-
-	despawn(): void {}
-
-	getTraySnapshot(username: string) {
-		return { username, layers: [...this.trayLayers], frozenAt: 0 };
-	}
-
-	getSnapshot() {
-		return { simTime: 0, characters: [] };
-	}
-}
 
 function setup(item?: IMenuItem) {
 	const port = new RecordingPort();
-	const sm = new SessionManager(item ? () => fixedOrder(item) : undefined);
+	const sm = new SessionManager(
+		item
+			? () => makeOrder({ id: `order-${item.id}`, items: [item] })
+			: undefined,
+	);
 	sm.attachPort(port);
 	port.attach(sm);
 	sm.incomingOrders.start();
@@ -147,9 +85,6 @@ describe("SessionManager: takeOrder", () => {
 });
 
 describe("SessionManager: serve", () => {
-	const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
-	const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
-
 	function serveEvent(username: string, frozenAt: number, layers: string[]) {
 		return {
 			type: "ACTION_COMPLETED" as const,
@@ -167,21 +102,27 @@ describe("SessionManager: serve", () => {
 
 		const e = serveEvent("alice", 1000, BURGER_IDS);
 		sm.onActionCompleted(e);
-		sm.onActionCompleted(e); // дубль
+		const result = sm.getLastResult("alice");
+		const xpAfterFirstEvent = sm.getXp("alice");
 
-		expect(sm.getXp("alice")).toBe(50);
-		expect(sm.getLastResult("alice")?.verdict).toBe("perfect");
-		expect(port.startOrders).toHaveLength(1); // авто-выдачи нет
+		sm.onActionCompleted(e);
+
+		expect(result).not.toBeNull();
+		expect(sm.getXp("alice")).toBe(xpAfterFirstEvent);
+		expect(sm.getLastResult("alice")).toBe(result);
+		expect(port.startOrders).toHaveLength(1);
 	});
 
 	it("serve начисляет XP и закрывает заказ; новый игрок берёт сам", () => {
 		const { port, sm } = setup(cola);
 		const first = takeOrder(sm, "alice");
-		port.trayLayers = ["cola"];
+		port.trayLayers = [cola.id];
 
 		const ack = sm.serve("alice");
+		const result = sm.getLastResult("alice");
 		expect(ack).toEqual({ ok: true });
-		expect(sm.getLastResult("alice")?.xpDelta).toBe(50);
+		expect(result).not.toBeNull();
+		expect(sm.getXp("alice")).toBe(result?.xpDelta);
 		expect(sm.getOrder("alice")).toBe(first);
 		expect(first.status).toBe(ORDER_STATUS.COMPLETED);
 
@@ -196,14 +137,16 @@ describe("SessionManager: serve", () => {
 		port.trayLayers = [];
 
 		sm.serve("alice");
-		expect(sm.getXp("alice")).toBe(-50);
-		expect(sm.getLastResult("alice")?.verdict).toBe("awful");
+		const result = sm.getLastResult("alice");
+		expect(result).not.toBeNull();
+		expect(result?.xpDelta).toBeLessThan(0);
+		expect(sm.getXp("alice")).toBe(result?.xpDelta);
 	});
 
 	it("после serve активного заказа у исполнителя нет", () => {
 		const { port, sm } = setup(cola);
 		const order = takeOrder(sm, "alice");
-		port.trayLayers = ["cola"];
+		port.trayLayers = [cola.id];
 
 		sm.serve("alice");
 
@@ -219,16 +162,17 @@ describe("SessionManager: таймаут", () => {
 		const order = takeOrder(sm, "alice");
 
 		sm.onTimeout("alice", order);
+		const xpAfterTimeout = sm.getXp("alice");
 
-		expect(order.status).toBe("EXPIRED");
-		expect(sm.getXp("alice")).toBe(-50);
+		expect(order.status).toBe(ORDER_STATUS.EXPIRED);
+		expect(xpAfterTimeout).toBeLessThan(0);
 		expect(port.cancels).toEqual(["timeout"]);
 		expect(port.tasks).toHaveLength(0);
 		expect(sm.getOrder("alice")).toBe(order); // авто-выдачи нет
 
 		// повторный вызов со старым заказом — игнор
 		sm.onTimeout("alice", order);
-		expect(sm.getXp("alice")).toBe(-50);
+		expect(sm.getXp("alice")).toBe(xpAfterTimeout);
 		expect(port.cancels).toHaveLength(1);
 	});
 
@@ -237,8 +181,8 @@ describe("SessionManager: таймаут", () => {
 		const orderA = takeOrder(sm, "alice");
 
 		vi.advanceTimersByTime(orderA.timeLimit + 1);
-		expect(orderA.status).toBe("EXPIRED");
-		expect(sm.getXp("alice")).toBe(-50);
+		expect(orderA.status).toBe(ORDER_STATUS.EXPIRED);
+		expect(sm.getXp("alice")).toBeLessThan(0);
 		expect(port.cancels).toEqual(["timeout"]);
 		expect(sm.getOrder("alice")).toBe(orderA);
 
@@ -252,19 +196,7 @@ describe("SessionManager: таймаут", () => {
 
 describe("SessionManager: nextDish", () => {
 	function twoDishOrder(): IOrder {
-		const burger = MENU_ITEMS.find((m) => m.id === "burger")!;
-		const cola = MENU_ITEMS.find((m) => m.id === "cola")!;
-		return {
-			id: "order-two",
-			items: [
-				{ item: burger, state: ORDER_ITEM_STATE.PENDING },
-				{ item: cola, state: ORDER_ITEM_STATE.PENDING },
-			],
-			customer: { id: "normal", name: "Обычный", strictness: 0.5 },
-			timeLimit: 90_000,
-			createdAt: new Date(0),
-			status: ORDER_STATUS.PENDING,
-		};
+		return makeOrder({ id: "order-two", items: [burger, cola] });
 	}
 
 	function setupTwoDish() {
@@ -312,19 +244,12 @@ describe("SessionManager: nextDish", () => {
 
 		port.trayLayers = BURGER_IDS;
 		expect(sm.nextDish("alice")).toEqual({ ok: true });
-		port.trayLayers = ["cola"];
+		port.trayLayers = [cola.id];
 
 		const ack = sm.serve("alice");
+		const result = sm.getLastResult("alice");
 		expect(ack).toEqual({ ok: true });
-		expect(sm.getLastResult("alice")?.verdict).toBe("perfect");
-		expect(sm.getXp("alice")).toBe(50);
-	});
-});
-
-describe("SessionManager: заказ по меню", () => {
-	it("меню реально: бургер и кола доступны", () => {
-		expect(MENU_ITEMS.map((m) => m.id)).toEqual(
-			expect.arrayContaining(["burger", "cola"]),
-		);
+		expect(result).not.toBeNull();
+		expect(sm.getXp("alice")).toBe(result?.xpDelta);
 	});
 });

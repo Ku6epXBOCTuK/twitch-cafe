@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
+import { runWithTestClock } from "./test-support/effect";
 
 const SmokeInput = Schema.Struct({ value: Schema.Number });
 
@@ -20,9 +21,7 @@ const smokeProgram = Effect.scoped(
 
 describe("Effect v4 compatibility", () => {
 	it("supports gen, schema, scope, layer and test clock", async () => {
-		const result = await Effect.runPromise(
-			Effect.provide(smokeProgram, TestClock.layer()),
-		);
+		const result = await runWithTestClock(smokeProgram);
 
 		expect(result).toBe(42);
 	});
