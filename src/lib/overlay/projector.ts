@@ -4,7 +4,7 @@ import type {
 } from "../core/game/session-manager";
 import { MENU_ITEM_VARIANT } from "../core/types/menu_item";
 import type { IOrder, IOrderItem } from "../core/types/order";
-import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
+import { ORDER_ITEM_STATE } from "../core/types/order";
 import type {
 	ExecutionOrder,
 	IncomingOrder,
@@ -46,27 +46,35 @@ function projectIncoming(sm: SessionManager): IncomingOrder[] {
 }
 
 /** Монитор исполнения: только заказы на мониторах (status === PENDING). */
-function projectExecution(sessions: PlayerSession[]): ExecutionOrder[] {
+function projectExecution(
+	sm: SessionManager,
+	sessions: PlayerSession[],
+): ExecutionOrder[] {
 	const execution: ExecutionOrder[] = [];
 	for (const session of sessions) {
-		if (session.order.status !== ORDER_STATUS.PENDING) continue;
+		const order = sm.getActiveOrder(session.username);
+		if (!order) continue;
 		execution.push({
-			id: session.order.id,
+			id: order.id,
 			performer: session.username,
-			dishes: session.order.items.map((item) => ({
+			dishes: order.items.map((item) => ({
 				name: item.item.name,
 				done: isSealed(item),
 			})),
-			deadline: deadlineOf(session.order),
+			deadline: deadlineOf(order),
 		});
 	}
 	return execution;
 }
 
-function playerOrder(session: PlayerSession): PlayerOrder | null {
-	if (session.order.status !== ORDER_STATUS.PENDING) return null;
+function playerOrder(
+	sm: SessionManager,
+	session: PlayerSession,
+): PlayerOrder | null {
+	const order = sm.getActiveOrder(session.username);
+	if (!order) return null;
 	return {
-		dishes: session.order.items.map((item) => ({
+		dishes: order.items.map((item) => ({
 			kind: item.item.kind,
 			done: isSealed(item),
 		})),
@@ -74,12 +82,15 @@ function playerOrder(session: PlayerSession): PlayerOrder | null {
 }
 
 /** Игрок остаётся в списке и без заказа (после serve/timeout). */
-function projectPlayers(sessions: PlayerSession[]): PlayerState[] {
+function projectPlayers(
+	sm: SessionManager,
+	sessions: PlayerSession[],
+): PlayerState[] {
 	return sessions.map((session) => ({
 		username: session.username,
 		x: 0,
 		y: 0,
-		order: playerOrder(session),
+		order: playerOrder(sm, session),
 	}));
 }
 
@@ -97,8 +108,8 @@ export function project(sm: SessionManager): OverlaySnapshot {
 	const sessions = sm.getSessions();
 	return {
 		incoming: projectIncoming(sm),
-		execution: projectExecution(sessions),
-		players: projectPlayers(sessions),
+		execution: projectExecution(sm, sessions),
+		players: projectPlayers(sm, sessions),
 		recipe: projectRecipe(sm),
 	};
 }

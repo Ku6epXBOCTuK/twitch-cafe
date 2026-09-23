@@ -8,6 +8,7 @@ import {
 	replyNextAck,
 	replyNextLastItem,
 	replyNextTrayEmpty,
+	replyNoActiveOrder,
 	replyNotInGame,
 	replyPutAck,
 	replyRecipeNoArg,
@@ -55,8 +56,14 @@ export function processMessage(
 			return sink.reply(replyBinAck(username, ack));
 		}
 		case "menu": {
-			const order = sm.getOrder(username);
-			if (!order) return sink.reply(replyNotInGame(username));
+			const order = sm.getActiveOrder(username);
+			if (!order) {
+				return sink.reply(
+					sm.hasSession(username)
+						? replyNoActiveOrder(username)
+						: replyNotInGame(username),
+				);
+			}
 			const tray = sm.getTraySnapshot(username);
 			return sink.reply(replyMenu(username, order, tray?.layers ?? []));
 		}
@@ -84,8 +91,13 @@ export function processMessage(
 		case "next": {
 			const res = sm.nextDish(username);
 			if (res.ok) return sink.reply(replyNextAck(username));
-			if (res.reason === "no_order")
-				return sink.reply(replyNotInGame(username));
+			if (res.reason === "no_order") {
+				return sink.reply(
+					sm.hasSession(username)
+						? replyNoActiveOrder(username)
+						: replyNotInGame(username),
+				);
+			}
 			if (res.reason === "last_item") {
 				return sink.reply(replyNextLastItem(username));
 			}

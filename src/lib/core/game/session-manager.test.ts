@@ -200,7 +200,17 @@ describe("SessionManager: serve", () => {
 		expect(sm.getLastResult("alice")?.verdict).toBe("awful");
 	});
 
-	it.todo("после serve - заказа у исполнителя нет");
+	it("после serve активного заказа у исполнителя нет", () => {
+		const { port, sm } = setup(cola);
+		const order = takeOrder(sm, "alice");
+		port.trayLayers = ["cola"];
+
+		sm.serve("alice");
+
+		expect(order.status).toBe(ORDER_STATUS.COMPLETED);
+		expect(sm.getOrder("alice")).toBe(order);
+		expect(sm.getActiveOrder("alice")).toBeUndefined();
+	});
 });
 
 describe("SessionManager: таймаут", () => {

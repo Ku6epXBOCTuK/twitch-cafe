@@ -5,6 +5,7 @@ import { SessionManager } from "../core/game/session-manager";
 import type { IOrder } from "../core/types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
 import { connectSim } from "../sim/sync";
+import { project } from "../overlay/projector";
 import { processMessage } from "./chat-commands";
 import { ListSink } from "./command-sink";
 
@@ -29,6 +30,17 @@ function fixedBurgerColaOrder(): IOrder {
 			{ item: burger, state: ORDER_ITEM_STATE.PENDING },
 			{ item: cola, state: ORDER_ITEM_STATE.PENDING },
 		],
+		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
+		timeLimit: 90_000,
+		createdAt: new Date(0),
+		status: ORDER_STATUS.PENDING,
+	};
+}
+
+function fixedColaOrder(): IOrder {
+	return {
+		id: `o-${Math.random().toString(36).slice(2)}`,
+		items: [{ item: cola, state: ORDER_ITEM_STATE.PENDING }],
 		customer: { id: "normal", name: "Обычный", strictness: 0.5 },
 		timeLimit: 90_000,
 		createdAt: new Date(0),
@@ -161,6 +173,38 @@ describe("беседа: полный игровой цикл", () => {
 		expect(sm.getXp(alice)).toBe(-50);
 		expect(sm.getOrder(alice)).toBe(res.order);
 	});
+});
+
+it("после serve новый заказ виден в !заказ и на execution-мониторе", () => {
+	const orders = [fixedBurgerOrder(), fixedColaOrder()];
+	const sm = setup(() => orders.shift()!);
+	const alice = "alice";
+	warmup(sm);
+
+	expect(send(sm, "!взять 1", alice).messages[0]).toContain("взял заказ");
+	for (const id of BURGER_IDS) {
+		processMessage(`!put ${id}`, alice, sm, new ListSink());
+	}
+	expect(send(sm, "!serve", alice).messages[0]).toContain("Идеально!");
+	expect(send(sm, "!заказ", alice).messages[0]).toContain(
+		"у тебя нет активного заказа",
+	);
+	expect(send(sm, "!next", alice).messages[0]).toContain(
+		"у тебя нет активного заказа",
+	);
+
+	sm.incomingOrders.spawn();
+	expect(send(sm, "!взять 1", alice).messages[0]).toContain("взял заказ");
+
+	const activeOrder = sm.getActiveOrder(alice);
+	expect(activeOrder?.items.map((entry) => entry.item.name)).toEqual(["Кола"]);
+	expect(send(sm, "!заказ", alice).messages[0]).toContain("Кола");
+	expect(send(sm, "!заказ", alice).messages[0]).not.toContain("Бургер");
+
+	const execution = project(sm).execution;
+	expect(execution).toHaveLength(1);
+	expect(execution[0].id).toBe(activeOrder?.id);
+	expect(execution[0].dishes).toEqual([{ name: "Кола", done: false }]);
 });
 
 describe("беседа: !взять", () => {

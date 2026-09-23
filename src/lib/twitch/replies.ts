@@ -35,6 +35,10 @@ export function replyNotInGame(username: string): string {
 	return `${username}, ты не в игре.`;
 }
 
+export function replyNoActiveOrder(username: string): string {
+	return `${username}, у тебя нет активного заказа.`;
+}
+
 export function replyUnknownIngredient(
 	username: string,
 	token: string,

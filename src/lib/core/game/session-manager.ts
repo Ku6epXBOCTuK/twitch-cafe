@@ -66,6 +66,11 @@ export class SessionManager implements ISimEvents {
 		return this.sessions.get(username)?.order;
 	}
 
+	getActiveOrder(username: string): IOrder | undefined {
+		const order = this.sessions.get(username)?.order;
+		return order?.status === ORDER_STATUS.PENDING ? order : undefined;
+	}
+
 	getLastResult(username: string): AssessmentResult | null {
 		return this.sessions.get(username)?.lastResult ?? null;
 	}
@@ -81,7 +86,7 @@ export class SessionManager implements ISimEvents {
 	/** Взять заказ из слота доски: сессия, таймер, персонаж в SIM. */
 	takeOrder(username: string, slotIndex: number): TakeOrderResult {
 		const existing = this.sessions.get(username);
-		if (existing?.order.status === ORDER_STATUS.PENDING) {
+		if (this.getActiveOrder(username)) {
 			return { ok: false, reason: "busy" };
 		}
 
@@ -145,10 +150,11 @@ export class SessionManager implements ISimEvents {
 	 */
 	nextDish(username: string): NextDishResult {
 		const session = this.sessions.get(username);
-		if (!session || session.order.status !== ORDER_STATUS.PENDING) {
+		const order = this.getActiveOrder(username);
+		if (!session || !order) {
 			return { ok: false, reason: "no_order" };
 		}
-		if (session.currentItemIndex >= session.order.items.length - 1) {
+		if (session.currentItemIndex >= order.items.length - 1) {
 			return { ok: false, reason: "last_item" };
 		}
 		const snapshot = this.port?.getTraySnapshot(username);
@@ -156,8 +162,7 @@ export class SessionManager implements ISimEvents {
 			return { ok: false, reason: "tray_empty" };
 		}
 
-		session.order.items[session.currentItemIndex].state =
-			ORDER_ITEM_STATE.SEALED;
+		order.items[session.currentItemIndex].state = ORDER_ITEM_STATE.SEALED;
 		session.sealed.push({
 			...snapshot,
 			frozenAt: Date.now(),
