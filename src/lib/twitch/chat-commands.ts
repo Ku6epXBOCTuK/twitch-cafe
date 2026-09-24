@@ -11,6 +11,8 @@ import {
 } from "../core/game/failure-reasons";
 import type {
 	BusyError,
+	NoActiveOrderError,
+	NoOrderError,
 	SessionManager,
 	ServeCancelledError,
 	ServeExpiredError,
@@ -81,6 +83,33 @@ function emitTaskFailure(
 	);
 
 	emitRefusal(error.reason);
+}
+
+type TaskBoundaryError = NoOrderError | NoActiveOrderError;
+
+function emitTaskBoundaryFailure(
+	sink: CommandSink,
+	correlationId: string,
+	username: string,
+	error: TaskBoundaryError,
+): void {
+	const emitBoundary = Match.type<TaskBoundaryError>().pipe(
+		Match.tag("NoOrder", () => {
+			emitEvent(sink, correlationId, {
+				type: GAME_EVENT_TYPE.NOT_IN_GAME,
+				username,
+			});
+		}),
+		Match.tag("NoActiveOrder", () => {
+			emitEvent(sink, correlationId, {
+				type: GAME_EVENT_TYPE.NO_ACTIVE_ORDER,
+				username,
+			});
+		}),
+		Match.exhaustive,
+	);
+
+	emitBoundary(error);
 }
 
 type TakeFailureReason = TakeOrderReason;
@@ -211,7 +240,8 @@ function runNext(
 function runTask(
 	effect: TaskEffect,
 	onSuccess: () => void,
-	onFailure: (error: TaskRefusedError) => void,
+	onRefused: (error: TaskRefusedError) => void,
+	onBoundaryFailure: (error: TaskBoundaryError) => void,
 	onRejected: () => void,
 ): Effect.Effect<void, CommandEffectError> {
 	return effect.pipe(
@@ -219,7 +249,19 @@ function runTask(
 		Effect.catchTag("TaskRefused", (error) =>
 			Effect.sync(() => {
 				onRejected();
-				onFailure(error);
+				onRefused(error);
+			}),
+		),
+		Effect.catchTag("NoOrder", (error) =>
+			Effect.sync(() => {
+				onRejected();
+				onBoundaryFailure(error);
+			}),
+		),
+		Effect.catchTag("NoActiveOrder", (error) =>
+			Effect.sync(() => {
+				onRejected();
+				onBoundaryFailure(error);
 			}),
 		),
 	);
@@ -266,6 +308,8 @@ export function processMessage(
 							error,
 							ingredient.id,
 						),
+					(error) =>
+						emitTaskBoundaryFailure(sink, correlationId, username, error),
 					() => sm.recordFailure(),
 				);
 			}),
@@ -296,6 +340,8 @@ export function processMessage(
 							error,
 							"serve",
 						),
+					(error) =>
+						emitTaskBoundaryFailure(sink, correlationId, username, error),
 					() => sm.recordFailure(),
 				);
 			}),
@@ -318,6 +364,8 @@ export function processMessage(
 							error,
 							"bin",
 						),
+					(error) =>
+						emitTaskBoundaryFailure(sink, correlationId, username, error),
 					() => sm.recordFailure(),
 				);
 			}),

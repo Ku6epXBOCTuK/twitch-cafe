@@ -229,6 +229,9 @@ describe("беседа: полный игровой цикл", () => {
 		expect(order.status).toBe(ORDER_STATUS.EXPIRED);
 		expect(sm.getXp(alice)).toBeLessThan(0);
 		expect(sm.getOrder(alice)).toBe(order);
+		expectEvent(await send(sm, "!put сыр", alice), "no_active_order");
+		expectEvent(await send(sm, "!serve", alice), "no_active_order");
+		expectEvent(await send(sm, "!bin", alice), "no_active_order");
 	});
 });
 
@@ -243,6 +246,9 @@ it("после serve новый заказ виден в !заказ и на exe
 		await runMessage(`!put ${id}`, alice, sm, new ListSink());
 	}
 	expectEvent(await send(sm, "!serve", alice), "order_served");
+	expectEvent(await send(sm, "!put сыр", alice), "no_active_order");
+	expectEvent(await send(sm, "!serve", alice), "no_active_order");
+	expectEvent(await send(sm, "!bin", alice), "no_active_order");
 	expectEvent(await send(sm, "!заказ", alice), "no_active_order");
 	expectEvent(await send(sm, "!next", alice), "no_active_order");
 

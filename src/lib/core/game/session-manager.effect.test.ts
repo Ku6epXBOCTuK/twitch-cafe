@@ -45,7 +45,7 @@ async function run<A, E>(
 }
 
 describe("SessionManager Effect lifecycle", () => {
-	it("returns a typed TaskRefused failure without a SIM character", async () => {
+	it("returns a typed NoOrder failure without a SIM character", async () => {
 		const sessionManager = new SessionManager();
 		const result = await run(
 			Effect.gen(function* () {
@@ -55,10 +55,50 @@ describe("SessionManager Effect lifecycle", () => {
 
 		expect(result._tag).toBe("Failure");
 		if (result._tag === "Failure") {
-			expect(result.failure._tag).toBe("TaskRefused");
-			if (result.failure._tag === "TaskRefused") {
-				expect(result.failure.reason).toBe("no_character");
-			}
+			expect(result.failure._tag).toBe("NoOrder");
+		}
+	});
+
+	it("rejects task commands after a terminal order and without a session", async () => {
+		const { port, sessionManager } = setup("terminal-order");
+		const results = await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sessionManager.takeOrderEffect("alice", 0);
+				port.trayLayers = [burger.id];
+				yield* sessionManager.serveEffect("alice");
+				const afterServe = yield* Effect.result(
+					sessionManager.putIngredientEffect("alice", burger.id),
+				);
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				const secondOrder = yield* sessionManager.takeOrderEffect("alice", 0);
+				yield* TestClock.adjust(Duration.millis(secondOrder.timeLimit + 1));
+				const afterTimeout = yield* Effect.result(
+					sessionManager.binEffect("alice"),
+				);
+				const withoutSession = yield* Effect.result(
+					sessionManager.serveEffect("bob"),
+				);
+				return { afterServe, afterTimeout, withoutSession };
+			}),
+		);
+
+		for (const result of Object.values(results)) {
+			expect(Result.isFailure(result)).toBe(true);
+		}
+		if (Result.isFailure(results.afterServe)) {
+			expect(results.afterServe.failure._tag).toBe("NoActiveOrder");
+		}
+		if (Result.isFailure(results.afterTimeout)) {
+			expect(results.afterTimeout.failure._tag).toBe("NoActiveOrder");
+		}
+		if (Result.isFailure(results.withoutSession)) {
+			expect(results.withoutSession.failure._tag).toBe("NoOrder");
 		}
 	});
 

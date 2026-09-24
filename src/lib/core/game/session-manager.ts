@@ -52,6 +52,10 @@ export class NoOrderError extends Data.TaggedError("NoOrder")<{
 	readonly username: string;
 }> {}
 
+export class NoActiveOrderError extends Data.TaggedError("NoActiveOrder")<{
+	readonly username: string;
+}> {}
+
 export class LastItemError extends Data.TaggedError("LastItem")<{
 	readonly username: string;
 }> {}
@@ -125,6 +129,8 @@ type NextDishEffect = SessionEffect<
 >;
 type TaskEffect = SessionEffect<
 	void,
+	| NoOrderError
+	| NoActiveOrderError
 	| TaskRefusedError
 	| SimQueueClosedError
 	| ServeExpiredError
@@ -467,6 +473,11 @@ export class SessionManager {
 	}
 
 	private enqueueTaskEffect(username: string, intent: TaskIntent): TaskEffect {
+		const session = this.sessions.get(username);
+		if (!session) return Effect.fail(new NoOrderError({ username }));
+		if (session.order.status !== ORDER_STATUS.PENDING) {
+			return Effect.fail(new NoActiveOrderError({ username }));
+		}
 		this.startSimEventConsumer();
 		return this.simEnqueueSemaphore.withPermit(
 			this.enqueueTaskRawEffect(username, intent).pipe(
