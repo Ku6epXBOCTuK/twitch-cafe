@@ -9,6 +9,7 @@ import { OrderValidator } from "../services/order-validator";
 import { xpForRating } from "../services/scoring";
 import { OrderFactory } from "../services/order-factory";
 import { IncomingOrders } from "./incoming-orders";
+import { DEFAULT_GAME_CONFIG, type GameConfig } from "./game-config";
 import { RecipeBook } from "./recipe-book";
 
 export type TakeOrderResult =
@@ -44,8 +45,11 @@ export class SessionManager implements ISimEvents {
 	/** Показ рецепта в оверлее (`!рецепт`). */
 	readonly recipeBook: RecipeBook;
 
-	constructor(makeOrder: () => IOrder = OrderFactory.generateOrder) {
-		this.incomingOrders = new IncomingOrders(makeOrder);
+	constructor(
+		makeOrder: () => IOrder = OrderFactory.generateOrder,
+		config: GameConfig = DEFAULT_GAME_CONFIG,
+	) {
+		this.incomingOrders = new IncomingOrders(makeOrder, config);
 		this.recipeBook = new RecipeBook();
 	}
 

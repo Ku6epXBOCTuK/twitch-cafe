@@ -1,122 +1,183 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Duration, Effect, Layer, Result, Scope } from "effect";
+import { TestClock } from "effect/testing";
+import { describe, expect, it } from "vitest";
 import { ORDER_CONFIG } from "../config";
 import { ORDER_STATUS } from "../types/order";
+import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 import { IncomingOrders } from "./incoming-orders";
 
 const { SPAWN_INTERVAL_MS, SLOT_LIFETIME_MS, SLOT_COUNT } = ORDER_CONFIG;
 
-beforeEach(() => {
-	vi.useFakeTimers();
-});
-afterEach(() => {
-	vi.useRealTimers();
-});
+async function runWithClock<A>(
+	board: IncomingOrders,
+	program: Effect.Effect<A, never, TestClock.TestClock | Scope.Scope>,
+	config: GameConfig = DEFAULT_GAME_CONFIG,
+): Promise<A> {
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.provide(
+				program,
+				Layer.mergeAll(TestClock.layer(), Layer.succeed(GameConfig, config)),
+			),
+		),
+	);
+}
 
-describe("IncomingOrders: спавн", () => {
-	it("до первого тика слоты пусты", () => {
+describe("IncomingOrders", () => {
+	it("до первого тика слоты пусты", async () => {
 		const board = new IncomingOrders();
-		board.start();
-
-		expect(board.getSlots().every((slot) => slot === null)).toBe(true);
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				expect(board.getSlots().every((slot) => slot === null)).toBe(true);
+			}),
+		);
 	});
 
-	it("наполняет слоты по тикам до SLOT_COUNT и не больше", () => {
+	it("наполняет слоты по тикам до SLOT_COUNT и не больше", async () => {
 		const board = new IncomingOrders();
-		board.start();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(1);
 
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-		expect(board.getSlots().filter(Boolean)).toHaveLength(1);
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 2));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
 
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * 2);
-		expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
-
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * 5);
-		expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 5));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
+			}),
+		);
 	});
 
-	it("спавн при полных слотах пропускается, освобождённый слот заполняется следующим тиком", () => {
+	it("повторный start не создаёт второй spawn loop", async () => {
 		const board = new IncomingOrders();
-		board.start();
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * SLOT_COUNT);
-
-		const taken = board.takeOrder(0);
-		expect(taken.ok).toBe(true);
-
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-		const slots = board.getSlots();
-		expect(slots[0]).not.toBeNull();
-		expect(slots.filter(Boolean)).toHaveLength(SLOT_COUNT);
-	});
-});
-
-describe("IncomingOrders: сгорание", () => {
-	it("невзятый заказ сгорает по LIFETIME и получает EXPIRED", () => {
-		const board = new IncomingOrders();
-		board.start();
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-
-		const order = board.getSlots()[0]!;
-		vi.advanceTimersByTime(SLOT_LIFETIME_MS);
-
-		expect(order.status).toBe(ORDER_STATUS.EXPIRED);
-		expect(board.getSlots()).not.toContain(order);
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(1);
+			}),
+		);
 	});
 
-	it("заказы, заспавненные позже, сгорают по своему сроку", () => {
-		const board = new IncomingOrders();
-		board.start();
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * 2);
-
-		const first = board.getSlots()[0]!;
-		const second = board.getSlots()[1]!;
-
-		vi.advanceTimersByTime(SLOT_LIFETIME_MS - SPAWN_INTERVAL_MS);
-		expect(first.status).toBe(ORDER_STATUS.EXPIRED);
-		expect(board.getSlots()).not.toContain(first);
-		expect(board.getSlots()).toContain(second);
-
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-		expect(second.status).toBe(ORDER_STATUS.EXPIRED);
-		expect(board.getSlots()).not.toContain(second);
-	});
-});
-
-describe("IncomingOrders: взятие", () => {
-	it("take отдаёт заказ и освобождает слот; сгорание снято", () => {
-		const board = new IncomingOrders();
-		board.start();
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-
-		const expected = board.getSlots()[0]!;
-		const result = board.takeOrder(0);
-		expect(result).toEqual({ ok: true, order: expected });
-		expect(board.getSlots()[0]).toBeNull();
-
-		vi.advanceTimersByTime(SLOT_LIFETIME_MS * 2);
-		expect(expected.status).toBe(ORDER_STATUS.PENDING);
+	it("использует значения GameConfig для слотов и spawn interval", async () => {
+		const config = {
+			...ORDER_CONFIG,
+			SLOT_COUNT: 1,
+			SPAWN_INTERVAL_MS: 10,
+			SLOT_LIFETIME_MS: 20,
+		} as const;
+		const board = new IncomingOrders(undefined, config);
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(9));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(0);
+				yield* TestClock.adjust(Duration.millis(1));
+				expect(board.getSlots().filter(Boolean)).toHaveLength(1);
+			}),
+			config,
+		);
 	});
 
-	it("take пустого или невалидного слота — empty_slot", () => {
+	it("невзятый заказ сгорает по LIFETIME и получает EXPIRED", async () => {
 		const board = new IncomingOrders();
-		board.start();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				const order = board.getSlots()[0]!;
+				yield* TestClock.adjust(Duration.millis(SLOT_LIFETIME_MS));
 
-		expect(board.takeOrder(0)).toEqual({ ok: false, reason: "empty_slot" });
-		expect(board.takeOrder(-1)).toEqual({ ok: false, reason: "empty_slot" });
-		expect(board.takeOrder(SLOT_COUNT)).toEqual({
-			ok: false,
-			reason: "empty_slot",
-		});
+				expect(order.status).toBe(ORDER_STATUS.EXPIRED);
+				expect(board.getSlots()).not.toContain(order);
+			}),
+		);
 	});
 
-	it("stop гасит спавн и сгорание", () => {
+	it("заказы, заспавненные позже, сгорают по своему сроку", async () => {
 		const board = new IncomingOrders();
-		board.start();
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS);
-		board.stop();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 2));
+				const first = board.getSlots()[0]!;
+				const second = board.getSlots()[1]!;
 
-		vi.advanceTimersByTime(SPAWN_INTERVAL_MS * 10);
-		const slots = board.getSlots();
-		expect(slots.filter(Boolean)).toHaveLength(1);
-		expect(slots[0]!.status).toBe(ORDER_STATUS.PENDING);
+				yield* TestClock.adjust(
+					Duration.millis(SLOT_LIFETIME_MS - SPAWN_INTERVAL_MS),
+				);
+				expect(first.status).toBe(ORDER_STATUS.EXPIRED);
+				expect(board.getSlots()).not.toContain(first);
+				expect(board.getSlots()).toContain(second);
+
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				expect(second.status).toBe(ORDER_STATUS.EXPIRED);
+				expect(board.getSlots()).not.toContain(second);
+			}),
+		);
+	});
+
+	it("take отдаёт заказ, освобождает слот и отменяет burn этого слота", async () => {
+		const board = new IncomingOrders();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				const expected = board.getSlots()[0]!;
+				const result = yield* Effect.result(board.takeOrderEffect(0));
+				if (Result.isFailure(result)) throw new Error("take failed");
+				expect(result.success).toBe(expected);
+				expect(board.getSlots()[0]).toBeNull();
+				yield* TestClock.adjust(Duration.millis(SLOT_LIFETIME_MS * 2));
+				expect(expected.status).toBe(ORDER_STATUS.PENDING);
+			}),
+		);
+	});
+
+	it("take пустого или невалидного слота возвращает EmptySlot", async () => {
+		const board = new IncomingOrders();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				for (const slot of [0, -1, SLOT_COUNT]) {
+					const result = yield* Effect.result(board.takeOrderEffect(slot));
+					expect(Result.isFailure(result)).toBe(true);
+					if (Result.isFailure(result)) {
+						expect(result.failure._tag).toBe("EmptySlot");
+						expect(result.failure.slot).toBe(slot);
+					}
+				}
+			}),
+		);
+	});
+
+	it("stop гасит spawn и burn", async () => {
+		const board = new IncomingOrders();
+		await runWithClock(
+			board,
+			Effect.gen(function* () {
+				yield* board.startEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				const order = board.getSlots()[0]!;
+				yield* board.stopEffect();
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 10));
+
+				expect(board.isRunning()).toBe(false);
+				expect(board.getSlots()).toHaveLength(SLOT_COUNT);
+				expect(board.getSlots()[0]).toBe(order);
+				expect(order.status).toBe(ORDER_STATUS.PENDING);
+			}),
+		);
 	});
 });

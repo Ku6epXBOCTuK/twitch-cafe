@@ -1,21 +1,10 @@
-import { Clock, Context, Effect, Layer, Logger, Random } from "effect";
+import { Clock, Effect, Exit, Layer, Logger, Random, Scope } from "effect";
 import { connectSim } from "../../sim/sync";
-import { ORDER_CONFIG } from "../config";
+import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 import { SessionManager } from "./session-manager";
 import type { ISimPort } from "./sim-port";
 
-export interface GameConfig {
-	readonly SLOT_COUNT: number;
-	readonly SPAWN_INTERVAL_MS: number;
-	readonly SLOT_LIFETIME_MS: number;
-	readonly ORDER_TIME_LIMIT_MS: number;
-}
-
-export const DEFAULT_GAME_CONFIG = ORDER_CONFIG satisfies GameConfig;
-
-export const GameConfig = Context.Reference<GameConfig>("GameConfig", {
-	defaultValue: () => DEFAULT_GAME_CONFIG,
-});
+export { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 
 export const gameRuntimeLayer = (config: GameConfig = DEFAULT_GAME_CONFIG) =>
 	Layer.mergeAll(
@@ -41,23 +30,43 @@ export interface GameRuntime {
 export function makeGameRuntime(
 	config: GameConfig = DEFAULT_GAME_CONFIG,
 ): GameRuntime {
-	const sessionManager = new SessionManager();
+	const sessionManager = new SessionManager(undefined, config);
 	const port = connectSim(sessionManager);
 	let running = false;
+	let runtimeScope: Scope.Closeable | null = null;
+
+	const start = Effect.gen(function* () {
+		if (running) return;
+		const scope = yield* Scope.make();
+		yield* Scope.provide(scope)(
+			Effect.provideService(
+				Effect.provideService(
+					sessionManager.incomingOrders.startEffect(),
+					GameConfig,
+					config,
+				),
+				Clock.Clock,
+				Clock.Clock.defaultValue(),
+			),
+		);
+		runtimeScope = scope;
+		running = true;
+	});
+
+	const shutdown = Effect.gen(function* () {
+		if (!running) return;
+		yield* sessionManager.incomingOrders.stopEffect();
+		const scope = runtimeScope;
+		runtimeScope = null;
+		running = false;
+		if (scope) yield* Scope.close(scope, Exit.void);
+	});
 
 	return {
 		core: { sessionManager, port },
 		layer: gameRuntimeLayer(config),
 		isRunning: () => running,
-		start: Effect.sync(() => {
-			if (running) return;
-			sessionManager.incomingOrders.start();
-			running = true;
-		}),
-		shutdown: Effect.sync(() => {
-			if (!running) return;
-			sessionManager.incomingOrders.stop();
-			running = false;
-		}),
+		start,
+		shutdown,
 	};
 }

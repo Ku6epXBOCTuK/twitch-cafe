@@ -1,84 +1,186 @@
-import type { IOrder } from "../types/order";
-import { ORDER_STATUS } from "../types/order";
-import { ORDER_CONFIG } from "../config";
+import {
+	Clock,
+	Data,
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Result,
+	Schedule,
+	Scope,
+} from "effect";
+import { ORDER_STATUS, type IOrder } from "../types/order";
 import { OrderFactory } from "../services/order-factory";
+import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 
 export type TakeOrderResult =
 	{ ok: true; order: IOrder } | { ok: false; reason: "empty_slot" };
 
-type Timer = ReturnType<typeof setTimeout>;
+export class EmptySlotError extends Data.TaggedError("EmptySlot")<{
+	readonly slot: number;
+}> {}
 
-/** Доска входящих заказов: автоген в первый пустой слот, сгорание невзятых. */
+type TimedEffect<A> = Effect.Effect<A, never, Scope.Scope>;
+
 export class IncomingOrders {
 	private readonly slots: (IOrder | null)[];
-	private readonly burnTimers: (Timer | null)[];
-	private spawnTimer: Timer | null = null;
+	private readonly burnFibers = new Map<number, Fiber.Fiber<void, never>>();
+	private loopFiber: Fiber.Fiber<void, never> | null = null;
+	private legacyScope: Scope.Closeable | null = null;
+	private running = false;
 
 	constructor(
 		private readonly makeOrder: () => IOrder = OrderFactory.generateOrder,
+		private readonly config: GameConfig = DEFAULT_GAME_CONFIG,
 	) {
-		this.slots = Array.from({ length: ORDER_CONFIG.SLOT_COUNT }, () => null);
-		this.burnTimers = Array.from(
-			{ length: ORDER_CONFIG.SLOT_COUNT },
-			() => null,
-		);
+		this.slots = Array.from({ length: config.SLOT_COUNT }, () => null);
 	}
 
 	start(): void {
-		if (this.spawnTimer) return;
-		this.spawnTimer = setInterval(
-			() => this.spawn(),
-			ORDER_CONFIG.SPAWN_INTERVAL_MS,
-		);
+		if (this.loopFiber) return;
+		this.runWithLegacyServices(this.startEffect());
 	}
 
 	stop(): void {
-		if (this.spawnTimer) {
-			clearInterval(this.spawnTimer);
-			this.spawnTimer = null;
-		}
-		for (let i = 0; i < this.burnTimers.length; i++) {
-			if (this.burnTimers[i]) clearTimeout(this.burnTimers[i]!);
-			this.burnTimers[i] = null;
-		}
+		Effect.runSync(this.stopEffect());
+		const scope = this.legacyScope;
+		this.legacyScope = null;
+		if (scope) Effect.runSync(Scope.close(scope, Exit.void));
+	}
+
+	isRunning(): boolean {
+		return this.running;
+	}
+
+	startEffect(): TimedEffect<void> {
+		return Effect.gen(
+			function* (this: IncomingOrders) {
+				if (this.loopFiber) return;
+				const config = yield* GameConfig;
+				const interval = Duration.millis(config.SPAWN_INTERVAL_MS);
+				const loop = Effect.sleep(interval).pipe(
+					Effect.andThen(
+						Effect.asVoid(
+							Effect.repeat(this.spawnEffect(), Schedule.spaced(interval)),
+						),
+					),
+				);
+				const fiber = yield* Effect.forkScoped(loop, {
+					startImmediately: true,
+				});
+				yield* Effect.addFinalizer(() =>
+					Effect.sync(() => {
+						if (this.loopFiber === fiber) {
+							this.loopFiber = null;
+							this.running = false;
+							this.burnFibers.clear();
+						}
+					}),
+				);
+				this.loopFiber = fiber;
+				this.running = true;
+			}.bind(this),
+		);
+	}
+
+	stopEffect(): Effect.Effect<void> {
+		return Effect.gen(
+			function* (this: IncomingOrders) {
+				const loop = this.loopFiber;
+				this.loopFiber = null;
+				this.running = false;
+				if (loop) yield* Fiber.interrupt(loop);
+
+				const burnFibers = [...this.burnFibers.values()];
+				this.burnFibers.clear();
+				if (burnFibers.length > 0) yield* Fiber.interruptAll(burnFibers);
+			}.bind(this),
+		);
 	}
 
 	getSlots(): readonly (IOrder | null)[] {
 		return [...this.slots];
 	}
 
-	takeOrder(slotIndex: number): TakeOrderResult {
-		if (slotIndex < 0 || slotIndex >= this.slots.length) {
-			return { ok: false, reason: "empty_slot" };
-		}
-		const order = this.slots[slotIndex];
-		if (!order) return { ok: false, reason: "empty_slot" };
+	takeOrderEffect(slotIndex: number): Effect.Effect<IOrder, EmptySlotError> {
+		return Effect.gen(
+			function* (this: IncomingOrders) {
+				const order = this.slots[slotIndex];
+				if (slotIndex < 0 || slotIndex >= this.slots.length || !order) {
+					return yield* new EmptySlotError({ slot: slotIndex });
+				}
 
-		this.slots[slotIndex] = null;
-		if (this.burnTimers[slotIndex]) clearTimeout(this.burnTimers[slotIndex]!);
-		this.burnTimers[slotIndex] = null;
-		return { ok: true, order };
+				this.slots[slotIndex] = null;
+				const fiber = this.burnFibers.get(slotIndex);
+				if (fiber) {
+					yield* Fiber.interrupt(fiber);
+					if (this.burnFibers.get(slotIndex) === fiber) {
+						this.burnFibers.delete(slotIndex);
+					}
+				}
+				return order;
+			}.bind(this),
+		);
 	}
 
-	/** Один тик спавна: кладёт заказ в первый пустой слот, если он есть. */
-	spawn(): void {
-		const index = this.slots.findIndex((slot) => slot === null);
-		if (index === -1) return;
-
-		const order = this.makeOrder();
-		this.slots[index] = order;
-		this.burnTimers[index] = setTimeout(
-			() => this.burn(order.id),
-			ORDER_CONFIG.SLOT_LIFETIME_MS,
+	takeOrder(slotIndex: number): TakeOrderResult {
+		const result = Effect.runSync(
+			Effect.result(this.takeOrderEffect(slotIndex)),
 		);
+		if (Result.isSuccess(result)) return { ok: true, order: result.success };
+		return { ok: false, reason: "empty_slot" };
+	}
+
+	spawnEffect(): TimedEffect<void> {
+		return Effect.gen(
+			function* (this: IncomingOrders) {
+				const config = yield* GameConfig;
+				const index = this.slots.findIndex((slot) => slot === null);
+				if (index === -1) return;
+
+				const order = this.makeOrder();
+				this.slots[index] = order;
+				const burn = Effect.sleep(
+					Duration.millis(config.SLOT_LIFETIME_MS),
+				).pipe(Effect.andThen(Effect.sync(() => this.burn(order.id))));
+				const fiber = yield* Effect.forkScoped(burn, {
+					startImmediately: false,
+				});
+				this.burnFibers.set(index, fiber);
+			}.bind(this),
+		);
+	}
+
+	spawn(): void {
+		this.runWithLegacyServices(this.spawnEffect());
 	}
 
 	private burn(orderId: string): void {
 		const index = this.slots.findIndex((slot) => slot?.id === orderId);
-		if (index === -1) return;
+		const order = index === -1 ? null : this.slots[index];
+		if (!order || order.id !== orderId) return;
 
-		this.slots[index]!.status = ORDER_STATUS.EXPIRED;
+		this.burnFibers.delete(index);
+		order.status = ORDER_STATUS.EXPIRED;
 		this.slots[index] = null;
-		this.burnTimers[index] = null;
+	}
+
+	private ensureLegacyScope(): Scope.Closeable {
+		if (this.legacyScope) return this.legacyScope;
+		this.legacyScope = Scope.makeUnsafe("sequential");
+		return this.legacyScope;
+	}
+
+	private runWithLegacyServices<A>(effect: TimedEffect<A>): A {
+		const scope = this.ensureLegacyScope();
+		return Effect.runSync(
+			Scope.provide(scope)(
+				Effect.provideService(
+					Effect.provideService(effect, GameConfig, this.config),
+					Clock.Clock,
+					Clock.Clock.defaultValue(),
+				),
+			),
+		);
 	}
 }
