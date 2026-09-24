@@ -130,7 +130,11 @@ describe("SessionManager Effect lifecycle", () => {
 				yield* TestClock.adjust(
 					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
 				);
-				yield* sessionManager.takeOrderEffect("alice", 0);
+				const activeOrder = yield* sessionManager.takeOrderEffect("alice", 0);
+				expect(activeOrder.takenAt).not.toBeNull();
+				expect(activeOrder.deadline).toBe(
+					activeOrder.takenAt!.getTime() + activeOrder.timeLimit,
+				);
 				yield* TestClock.adjust(Duration.millis(orderTimeLimit + 1));
 				const xpAfterTimeout = sessionManager.getXp("alice");
 				yield* Queue.offer(port.eventQueue, serveEvent("alice", order.id, 1));

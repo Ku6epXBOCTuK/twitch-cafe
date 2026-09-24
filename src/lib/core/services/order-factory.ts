@@ -9,12 +9,16 @@ export class OrderFactory {
 		const item = MENU_ITEMS[Math.floor(rng() * MENU_ITEMS.length)];
 		const customer =
 			CUSTOMER_PRESETS[Math.floor(rng() * CUSTOMER_PRESETS.length)];
+		const spawnedAt = new Date();
 		return {
-			id: `order-${Date.now()}-${Math.floor(rng() * 0xffffff)}`,
+			id: `order-${spawnedAt.getTime()}-${Math.floor(rng() * 0xffffff)}`,
 			items: [{ item, state: ORDER_ITEM_STATE.PENDING }],
 			customer,
 			timeLimit: ORDER_CONFIG.ORDER_TIME_LIMIT_MS,
-			createdAt: new Date(),
+			createdAt: spawnedAt,
+			spawnedAt,
+			takenAt: null,
+			deadline: spawnedAt.getTime() + ORDER_CONFIG.SLOT_LIFETIME_MS,
 			status: ORDER_STATUS.PENDING,
 		};
 	}

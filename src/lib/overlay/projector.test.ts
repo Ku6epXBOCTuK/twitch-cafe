@@ -11,7 +11,8 @@ import { burger, BURGER_IDS, cola, makeOrder } from "#lib/test-support";
 import { projectSnapshot } from "./projector";
 
 const CREATED_AT_MS = 1000;
-const DEADLINE_MS = CREATED_AT_MS + ORDER_CONFIG.ORDER_TIME_LIMIT_MS;
+const INCOMING_DEADLINE_MS = CREATED_AT_MS + ORDER_CONFIG.SLOT_LIFETIME_MS;
+const ACTIVE_DEADLINE_MS = CREATED_AT_MS + ORDER_CONFIG.ORDER_TIME_LIMIT_MS;
 
 function order(
 	id: string,
@@ -67,14 +68,14 @@ describe("projectSnapshot: incoming", () => {
 				id: "o1",
 				dishes: ["Бургер"],
 				strictness: 0.2,
-				deadline: DEADLINE_MS,
+				deadline: INCOMING_DEADLINE_MS,
 			},
 			{
 				slot: 3,
 				id: "o2",
 				dishes: ["Кола", "Кола"],
 				strictness: 0.9,
-				deadline: DEADLINE_MS,
+				deadline: INCOMING_DEADLINE_MS,
 			},
 		]);
 	});
@@ -89,7 +90,7 @@ describe("projectSnapshot: incoming", () => {
 				id: "o2",
 				dishes: ["Кола"],
 				strictness: 0.5,
-				deadline: DEADLINE_MS,
+				deadline: INCOMING_DEADLINE_MS,
 			},
 		]);
 		expect(first.id).toBe("o1");
@@ -99,6 +100,8 @@ describe("projectSnapshot: incoming", () => {
 describe("projectSnapshot: execution и players", () => {
 	it("сессия с двумя блюдами: dishes и order до/после !next", () => {
 		const activeOrder = order("o1", [burger, cola]);
+		activeOrder.takenAt = new Date(CREATED_AT_MS);
+		activeOrder.deadline = ACTIVE_DEADLINE_MS;
 		const initial = projectSnapshot(
 			snapshot([], [player("alice", activeOrder)]),
 		);
@@ -111,7 +114,7 @@ describe("projectSnapshot: execution и players", () => {
 					{ name: "Бургер", done: false },
 					{ name: "Кола", done: false },
 				],
-				deadline: DEADLINE_MS,
+				deadline: ACTIVE_DEADLINE_MS,
 			},
 		]);
 		expect(initial.players).toEqual([

@@ -23,6 +23,9 @@ export interface MakeOrderOptions {
 	strictness?: number;
 	timeLimit?: number;
 	createdAt?: Date;
+	spawnedAt?: Date;
+	takenAt?: Date | null;
+	deadline?: number;
 }
 
 export function makeOrder(options: MakeOrderOptions = {}): IOrder {
@@ -32,6 +35,12 @@ export function makeOrder(options: MakeOrderOptions = {}): IOrder {
 		strictness = 0.5,
 		timeLimit = ORDER_CONFIG.ORDER_TIME_LIMIT_MS,
 		createdAt = new Date(0),
+		spawnedAt = createdAt,
+		takenAt = null,
+		deadline = (takenAt ?? spawnedAt).getTime() +
+			(takenAt
+				? ORDER_CONFIG.ORDER_TIME_LIMIT_MS
+				: ORDER_CONFIG.SLOT_LIFETIME_MS),
 	} = options;
 
 	return {
@@ -43,6 +52,9 @@ export function makeOrder(options: MakeOrderOptions = {}): IOrder {
 		customer: { id: "normal", name: "Обычный", strictness },
 		timeLimit,
 		createdAt,
+		spawnedAt,
+		takenAt,
+		deadline,
 		status: ORDER_STATUS.PENDING,
 	};
 }

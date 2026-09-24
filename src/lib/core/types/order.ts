@@ -27,5 +27,8 @@ export interface IOrder {
 	customer: ICustomer;
 	timeLimit: number;
 	createdAt: Date;
+	spawnedAt: Date;
+	takenAt: Date | null;
+	deadline: number;
 	status: OrderStatus;
 }

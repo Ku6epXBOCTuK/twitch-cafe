@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 function deadlineOf(order: IOrder): number {
-	return order.createdAt.getTime() + order.timeLimit;
+	return order.deadline;
 }
 
 function isSealed(item: IOrderItem): boolean {

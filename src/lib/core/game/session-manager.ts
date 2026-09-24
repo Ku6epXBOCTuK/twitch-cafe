@@ -340,6 +340,9 @@ export class SessionManager {
 					}
 
 					const order = yield* this.incomingOrders.takeOrderEffect(slotIndex);
+					const takenAt = yield* Clock.currentTimeMillis;
+					order.takenAt = new Date(takenAt);
+					order.deadline = takenAt + order.timeLimit;
 					const scope = this.ensureSessionScope();
 					const previousFiber = existing?.timeoutFiber ?? null;
 					if (previousFiber) yield* Fiber.interrupt(previousFiber);
