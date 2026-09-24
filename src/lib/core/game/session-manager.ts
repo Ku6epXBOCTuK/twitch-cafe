@@ -12,6 +12,7 @@ import {
 	Scope,
 	Semaphore,
 } from "effect";
+import type { IMenuItem } from "../types/menu_item";
 import type { IOrder } from "../types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import {
@@ -97,6 +98,29 @@ export interface PlayerSession {
 	lastSequence: number;
 }
 
+export type SessionSnapshotPlayer = Omit<PlayerSession, "timeoutFiber">;
+
+export interface SessionSnapshot {
+	readonly incoming: readonly (IOrder | null)[];
+	readonly sessions: readonly SessionSnapshotPlayer[];
+	readonly recipe: IMenuItem | null;
+}
+
+export const SESSION_EVENT_TYPE = {
+	CHANGED: "changed",
+} as const;
+
+export type SessionEventType =
+	(typeof SESSION_EVENT_TYPE)[keyof typeof SESSION_EVENT_TYPE];
+
+export interface SessionChangedEvent {
+	readonly type: typeof SESSION_EVENT_TYPE.CHANGED;
+	readonly revision: number;
+	readonly snapshot: SessionSnapshot;
+}
+
+export type SessionChangeListener = (event: SessionChangedEvent) => void;
+
 interface PendingServe {
 	readonly orderId: string;
 	readonly deferred: Deferred.Deferred<
@@ -131,13 +155,17 @@ export class SessionManager implements ISimEvents {
 	private running = false;
 	readonly incomingOrders: IncomingOrders;
 	readonly recipeBook: RecipeBook;
+	private readonly changeListeners = new Set<SessionChangeListener>();
+	private changeRevision = 0;
 
 	constructor(
 		makeOrder: () => IOrder = OrderFactory.generateOrder,
 		private readonly config: GameConfig = DEFAULT_GAME_CONFIG,
 	) {
-		this.incomingOrders = new IncomingOrders(makeOrder, config);
-		this.recipeBook = new RecipeBook();
+		this.incomingOrders = new IncomingOrders(makeOrder, config, () =>
+			this.notifyChange(),
+		);
+		this.recipeBook = new RecipeBook(() => this.notifyChange());
 	}
 
 	start(): void {
@@ -236,6 +264,43 @@ export class SessionManager implements ISimEvents {
 		return [...this.sessions.values()].map((session) => ({ ...session }));
 	}
 
+	getSnapshot(): SessionSnapshot {
+		return {
+			incoming: this.incomingOrders.getSlots(),
+			sessions: [...this.sessions.values()].map((session) => ({
+				username: session.username,
+				order: session.order,
+				xp: session.xp,
+				currentItemIndex: session.currentItemIndex,
+				sealed: session.sealed.map((dish) => ({
+					...dish,
+					layers: [...dish.layers],
+				})),
+				lastResult: session.lastResult,
+				lastSequence: session.lastSequence,
+			})),
+			recipe: this.recipeBook.getCurrent(),
+		};
+	}
+
+	getSnapshotEffect(): Effect.Effect<SessionSnapshot> {
+		return Effect.sync(() => this.getSnapshot());
+	}
+
+	subscribeToChanges(listener: SessionChangeListener): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
+	}
+
+	private notifyChange(): void {
+		const event: SessionChangedEvent = {
+			type: SESSION_EVENT_TYPE.CHANGED,
+			revision: ++this.changeRevision,
+			snapshot: this.getSnapshot(),
+		};
+		for (const listener of this.changeListeners) listener(event);
+	}
+
 	takeOrderEffect(username: string, slotIndex: number): TakeOrderEffect {
 		return this.withPermit(
 			Effect.gen(
@@ -294,6 +359,7 @@ export class SessionManager implements ISimEvents {
 						Effect.forkScoped(timeout, { startImmediately: false }),
 					);
 					this.port?.startOrder(username, order);
+					this.notifyChange();
 					return order;
 				}.bind(this),
 			),
@@ -416,6 +482,7 @@ export class SessionManager implements ISimEvents {
 					});
 					session.currentItemIndex++;
 					this.port?.clearTray(username);
+					this.notifyChange();
 				}.bind(this),
 			),
 		);
@@ -632,6 +699,7 @@ export class SessionManager implements ISimEvents {
 		const result = OrderValidator.assessOrderDishes(sealed, current, order);
 		session.lastResult = result;
 		session.xp += result.xpDelta;
+		this.notifyChange();
 	}
 
 	private expireOrderEffect(
@@ -685,6 +753,7 @@ export class SessionManager implements ISimEvents {
 		order.status = ORDER_STATUS.EXPIRED;
 		session.xp += xpForRating(0);
 		this.port?.cancelOrder(session.username, reason);
+		this.notifyChange();
 	}
 
 	private withPermit<A, E, R>(

@@ -26,6 +26,13 @@ describe("GameRuntime", () => {
 		expect(runtime.isRunning()).toBe(false);
 	});
 
+	it("exposes the current snapshot through the runtime service", () => {
+		const runtime = makeGameRuntime();
+		expect(Effect.runSync(runtime.getSnapshot)).toEqual(
+			runtime.core.sessionManager.getSnapshot(),
+		);
+	});
+
 	it("composes config, clock and random services", async () => {
 		const config = { ...ORDER_CONFIG, SLOT_COUNT: 1 } as const;
 		const runtime = makeGameRuntime(config);

@@ -1,10 +1,27 @@
-import { Clock, Effect, Exit, Layer, Logger, Random, Scope } from "effect";
+import {
+	Clock,
+	Effect,
+	Exit,
+	Layer,
+	Logger,
+	PubSub,
+	Random,
+	Scope,
+	Stream,
+} from "effect";
 import { connectSim } from "../../sim/sync";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 import { SessionManager } from "./session-manager";
 import type { ISimPort } from "./sim-port";
+import {
+	SESSION_EVENT_TYPE,
+	type SessionChangedEvent,
+	type SessionSnapshot,
+} from "./session-manager";
 
 export { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
+
+const SESSION_EVENT_BUFFER_SIZE = 64;
 
 export const gameRuntimeLayer = (config: GameConfig = DEFAULT_GAME_CONFIG) =>
 	Layer.mergeAll(
@@ -22,6 +39,8 @@ export interface GameCore {
 export interface GameRuntime {
 	readonly core: GameCore;
 	readonly layer: ReturnType<typeof gameRuntimeLayer>;
+	readonly getSnapshot: Effect.Effect<SessionSnapshot>;
+	readonly events: Stream.Stream<SessionChangedEvent>;
 	readonly isRunning: () => boolean;
 	readonly start: Effect.Effect<void>;
 	readonly shutdown: Effect.Effect<void>;
@@ -32,6 +51,23 @@ export function makeGameRuntime(
 ): GameRuntime {
 	const sessionManager = new SessionManager(undefined, config);
 	const port = connectSim(sessionManager);
+	const eventBus = Effect.runSync(
+		PubSub.sliding<SessionChangedEvent>({
+			capacity: SESSION_EVENT_BUFFER_SIZE,
+			replay: 1,
+		}),
+	);
+	sessionManager.subscribeToChanges((event) => {
+		Effect.runSync(PubSub.publish(eventBus, event));
+	});
+	Effect.runSync(
+		PubSub.publish(eventBus, {
+			type: SESSION_EVENT_TYPE.CHANGED,
+			revision: 0,
+			snapshot: sessionManager.getSnapshot(),
+		}),
+	);
+	const events = Stream.fromPubSub(eventBus);
 	let running = false;
 	let runtimeScope: Scope.Closeable | null = null;
 
@@ -61,6 +97,8 @@ export function makeGameRuntime(
 	return {
 		core: { sessionManager, port },
 		layer: gameRuntimeLayer(config),
+		getSnapshot: sessionManager.getSnapshotEffect(),
+		events,
 		isRunning: () => running,
 		start,
 		shutdown,

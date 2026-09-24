@@ -8,9 +8,12 @@ export type RecipeShowResult =
 export class RecipeBook {
 	private current: IMenuItem | null = null;
 
+	constructor(private readonly onChange: () => void = () => {}) {}
+
 	show(item: IMenuItem | null): RecipeShowResult {
 		if (!item) return { ok: false, reason: RECIPE_REASON.UNKNOWN_ITEM };
 		this.current = item;
+		this.onChange();
 		return { ok: true, item };
 	}
 
@@ -20,5 +23,6 @@ export class RecipeBook {
 
 	stop(): void {
 		this.current = null;
+		this.onChange();
 	}
 }

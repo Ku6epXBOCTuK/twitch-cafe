@@ -34,6 +34,7 @@ export class IncomingOrders {
 	constructor(
 		private readonly makeOrder: () => IOrder = OrderFactory.generateOrder,
 		private readonly config: GameConfig = DEFAULT_GAME_CONFIG,
+		private readonly onChange: () => void = () => {},
 	) {
 		this.slots = Array.from({ length: config.SLOT_COUNT }, () => null);
 	}
@@ -149,6 +150,7 @@ export class IncomingOrders {
 					startImmediately: false,
 				});
 				this.burnFibers.set(index, fiber);
+				this.onChange();
 			}.bind(this),
 		);
 	}
@@ -165,6 +167,7 @@ export class IncomingOrders {
 		this.burnFibers.delete(index);
 		order.status = ORDER_STATUS.EXPIRED;
 		this.slots[index] = null;
+		this.onChange();
 	}
 
 	private ensureLegacyScope(): Scope.Closeable {
