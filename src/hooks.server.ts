@@ -9,10 +9,10 @@ import { getGameRuntime, shutdownGame } from "#lib/core/game/bootstrap";
 import { missingBotEnvVars } from "#lib/twitch/bootstrap";
 import { startBotFromEnv } from "#lib/twitch/bootstrap";
 
-import type { ChatClient } from "@twurple/chat";
+import type { ChatBotHandle } from "#lib/twitch/chat-bot";
 
 let initialized = false;
-let botClient: ChatClient | null = null;
+let botHandle: ChatBotHandle | null = null;
 
 function init(): void {
 	if (initialized) return;
@@ -32,12 +32,12 @@ function init(): void {
 		process.exit(1);
 	}
 	const { sessionManager } = getGameRuntime().core;
-	botClient = startBotFromEnv(sessionManager, env);
+	botHandle = startBotFromEnv(sessionManager, env);
 }
 
 function disposeApplication(): void {
-	botClient?.quit();
-	botClient = null;
+	botHandle?.dispose();
+	botHandle = null;
 	shutdownGame();
 	process.removeListener("SIGTERM", onSigterm);
 	process.removeListener("SIGINT", onSigint);

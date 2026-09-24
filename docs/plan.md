@@ -142,8 +142,9 @@ miniplex-мир, `world.ts`, `simulation.ts` и системы движения 
    представлены.
 5. **Строгий overlay:** `strictness` выводится на доске как `0.5/5`, хотя
    backend хранит `0..1`; координаты игроков остаются `(0, 0)`.
-6. **Событийная модель:** SSE уже подписан на `GameRuntime.events`; анимации и
-   проактивные уведомления отложены.
+6. **Событийная модель:** SSE уже подписан на `GameRuntime.events`; timeout
+   уведомляется через lifecycle event, а анимации и остальные proactive
+   уведомления отложены.
 7. **HMR:** runtime и ChatClient очищаются через `import.meta.hot.dispose`;
    полная проверка dev-сервера и reconnect-инфраструктуры Twitch остаётся
    отдельной smoke-проверкой.

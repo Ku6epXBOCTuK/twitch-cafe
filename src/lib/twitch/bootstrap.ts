@@ -1,6 +1,9 @@
 import type { SessionManager } from "../core/game/session-manager";
-import { startChatBot, type ChatBotConfig } from "./chat-bot";
-import type { ChatClient } from "@twurple/chat";
+import {
+	startChatBot,
+	type ChatBotConfig,
+	type ChatBotHandle,
+} from "./chat-bot";
 
 const REQUIRED_BOT_ENV = [
 	"TWITCH_CLIENT_ID",
@@ -47,10 +50,10 @@ export function readBotConfig(env: EnvLookup): ChatBotConfig | null {
 export function startBotFromEnv(
 	sm: SessionManager,
 	env: EnvLookup = process.env,
-): ChatClient | null {
+): ChatBotHandle | null {
 	const config = readBotConfig(env);
 	if (!config) return null;
-	const client = startChatBot(config, sm);
-	client.connect();
-	return client;
+	const handle = startChatBot(config, sm);
+	handle.client.connect();
+	return handle;
 }

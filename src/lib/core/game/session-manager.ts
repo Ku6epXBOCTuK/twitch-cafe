@@ -113,6 +113,24 @@ export interface SessionChangedEvent {
 
 export type SessionChangeListener = (event: SessionChangedEvent) => void;
 
+export const SESSION_LIFECYCLE_EVENT_TYPE = {
+	ORDER_EXPIRED: "order_expired",
+} as const;
+
+export type SessionLifecycleEventType =
+	(typeof SESSION_LIFECYCLE_EVENT_TYPE)[keyof typeof SESSION_LIFECYCLE_EVENT_TYPE];
+
+export interface SessionOrderExpiredEvent {
+	readonly type: typeof SESSION_LIFECYCLE_EVENT_TYPE.ORDER_EXPIRED;
+	readonly username: string;
+	readonly orderId: string;
+	readonly xpDelta: number;
+	readonly reason: CancelReason;
+}
+
+export type SessionLifecycleEvent = SessionOrderExpiredEvent;
+export type SessionLifecycleListener = (event: SessionLifecycleEvent) => void;
+
 interface PendingServe {
 	readonly orderId: string;
 	readonly deferred: Deferred.Deferred<
@@ -150,6 +168,7 @@ export class SessionManager {
 	readonly incomingOrders: IncomingOrders;
 	readonly recipeBook: RecipeBook;
 	private readonly changeListeners = new Set<SessionChangeListener>();
+	private readonly lifecycleListeners = new Set<SessionLifecycleListener>();
 	private readonly metrics = new GameMetrics();
 	private changeRevision = 0;
 
@@ -274,6 +293,11 @@ export class SessionManager {
 		return () => this.changeListeners.delete(listener);
 	}
 
+	subscribeToLifecycle(listener: SessionLifecycleListener): () => void {
+		this.lifecycleListeners.add(listener);
+		return () => this.lifecycleListeners.delete(listener);
+	}
+
 	recordCommand(): void {
 		this.metrics.recordCommand();
 	}
@@ -300,6 +324,10 @@ export class SessionManager {
 			snapshot: this.getSnapshot(),
 		};
 		for (const listener of this.changeListeners) listener(event);
+	}
+
+	private notifyLifecycle(event: SessionLifecycleEvent): void {
+		for (const listener of this.lifecycleListeners) listener(event);
 	}
 
 	takeOrderEffect(username: string, slotIndex: number): TakeOrderEffect {
@@ -631,9 +659,17 @@ export class SessionManager {
 			session.timeoutFiber = null;
 		}
 		order.status = ORDER_STATUS.EXPIRED;
-		session.xp += xpForRating(0);
+		const xpDelta = xpForRating(0);
+		session.xp += xpDelta;
 		this.port?.cancelOrder(session.username, reason);
 		this.notifyChange();
+		this.notifyLifecycle({
+			type: SESSION_LIFECYCLE_EVENT_TYPE.ORDER_EXPIRED,
+			username: session.username,
+			orderId: order.id,
+			xpDelta,
+			reason,
+		});
 	}
 
 	private withPermit<A, E, R>(

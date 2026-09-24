@@ -6,7 +6,7 @@ import { ORDER_STATUS } from "../types/order";
 import { burger, cola, makeOrder, RecordingPort } from "#lib/test-support";
 import type { IMenuItem } from "../types/menu_item";
 import { ACTION_KIND, type ActionCompletedEvent } from "./sim-dto";
-import { SessionManager } from "./session-manager";
+import { SessionManager, type SessionLifecycleEvent } from "./session-manager";
 
 const orderTimeLimit = 100;
 
@@ -231,6 +231,33 @@ describe("SessionManager Effect lifecycle", () => {
 			activeSessions: 3,
 			queueDepth: 0,
 			timerCount: 1,
+		});
+	});
+
+	it("emits one order-expired lifecycle event for a timeout", async () => {
+		const { sessionManager } = setup("timeout-event");
+		const events: SessionLifecycleEvent[] = [];
+		const unsubscribe = sessionManager.subscribeToLifecycle((event) =>
+			events.push(event),
+		);
+		await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				const order = yield* sessionManager.takeOrderEffect("alice", 0);
+				yield* TestClock.adjust(Duration.millis(order.timeLimit + 1));
+				yield* TestClock.adjust(Duration.millis(order.timeLimit + 1));
+			}),
+		);
+		unsubscribe();
+
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({
+			username: "alice",
+			orderId: "timeout-event",
+			reason: "timeout",
 		});
 	});
 

@@ -20,7 +20,9 @@ describe("ChatSink", () => {
 		const sink = new ChatSink(client, "channel");
 
 		expect(() => sink.emit(event)).not.toThrow();
-		await Promise.resolve();
+		await vi.waitFor(() => {
+			expect(log).toHaveBeenCalled();
+		});
 		expect(say).toHaveBeenCalledOnce();
 		expect(log).toHaveBeenCalledWith(
 			"[chat] не удалось отправить ответ в channel (command-1):",

@@ -56,6 +56,10 @@ export function replyBusy(username: string): string {
 	return `${username}, персонаж ещё идёт — подожди.`;
 }
 
+export function replyOrderExpired(username: string, xpDelta: number): string {
+	return `${username}: заказ истёк, ${xpDelta} XP.`;
+}
+
 export function replyResult(
 	username: string,
 	result: AssessmentResult,
