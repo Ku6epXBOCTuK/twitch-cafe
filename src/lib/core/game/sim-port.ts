@@ -1,27 +1,46 @@
+import { Data, Effect, Queue } from "effect";
 import type { IOrder } from "../types/order";
 import type { ITraySnapshot } from "../types/tray";
 import type {
 	ActionCompletedEvent,
 	ActionStartedEvent,
-	CharacterRemovedEvent,
 	CancelReason,
+	CharacterRemovedEvent,
+	SimOutEvent,
 	SimSnapshot,
-	TaskAck,
 	TaskIntent,
+	TaskRefusal,
 } from "./sim-dto";
 
+export const SIM_EVENT_QUEUE_CAPACITY = 64;
+
+export type SimEventQueue = Queue.Queue<SimOutEvent>;
+
+export class SimTaskRefusedError extends Data.TaggedError("SimTaskRefused")<{
+	readonly username: string;
+	readonly reason: TaskRefusal;
+}> {}
+
+export class SimQueueClosedError extends Data.TaggedError("SimQueueClosed")<{
+	readonly username: string;
+}> {}
+
+export function makeSimEventQueue(
+	capacity: number = SIM_EVENT_QUEUE_CAPACITY,
+): SimEventQueue {
+	return Effect.runSync(Queue.bounded<SimOutEvent>(capacity));
+}
+
 export interface ISimPort {
-	/** Взятие заказа: поднять персонажа, поднос и срез заказа. */
+	readonly eventQueue: SimEventQueue;
 	startOrder(username: string, order: IOrder): void;
-	/** `!put` / `!bin` / `!serve`: принять или отказать. */
-	enqueueTask(username: string, intent: TaskIntent): TaskAck;
-	/** Таймаут/выход: оборвать действие и очистить поднос. */
+	enqueueTask(
+		username: string,
+		intent: TaskIntent,
+	): Effect.Effect<void, SimTaskRefusedError | SimQueueClosedError>;
 	cancelOrder(username: string, reason: CancelReason): void;
-	/** Запечатать блюдо (`!next`): очистить поднос, персонаж остаётся. */
 	clearTray(username: string): void;
-	/** Забрать персонажа (дисконнект). */
-	despawn(username: string): void;
-	/** Чтение: `!menu`, снапшот оверлея. */
+	despawn(username: string): Effect.Effect<void, SimQueueClosedError>;
 	getTraySnapshot(username: string): ITraySnapshot | undefined;
 	getSnapshot(): SimSnapshot;
 }

@@ -1,13 +1,19 @@
+import { Effect, Queue } from "effect";
 import type { IOrder } from "../core/types/order";
 import type { ITraySnapshot } from "../core/types/tray";
-import type { ISimPort } from "../core/game/sim-port";
-import type { ISimEvents } from "../core/game/sim-port";
+import {
+	SimQueueClosedError,
+	SimTaskRefusedError,
+	type ISimPort,
+	type SimEventQueue,
+} from "../core/game/sim-port";
 import {
 	ACTION_KIND,
+	SIM_EVENT_TYPE,
 	TASK_REFUSAL,
 	type CancelReason,
+	type SimOutEvent,
 	type SimSnapshot,
-	type TaskAck,
 	type TaskIntent,
 } from "../core/game/sim-dto";
 
@@ -19,79 +25,96 @@ interface StubPlayer {
 }
 
 export interface StubSimOptions {
-	/** Валидные для `!put` id: ингредиенты + простые предметы меню. */
 	allowedIngredientIds: ReadonlySet<string>;
 }
 
-/**
- * Провизорная SIM: каждое действие завершается мгновенно в момент запроса.
- * Тот же ISimPort, что у реальной miniplex-симуляции, — замена происходит
- * без правок в SessionManager и слое чата.
- */
 export class StubSim implements ISimPort {
 	private readonly players = new Map<string, StubPlayer>();
 	private sequence = 0;
 
 	constructor(
-		private readonly events: ISimEvents,
+		readonly eventQueue: SimEventQueue,
 		private readonly options: StubSimOptions,
 	) {}
 
 	startOrder(username: string, order: IOrder): void {
-		const existing = this.players.get(username);
 		this.players.set(username, {
 			username,
 			orderId: order.id,
 			layers: [],
 			startedAt: Date.now(),
 		});
-		if (!existing) return;
-		// новый заказ — чистый поднос (слои прошлого serve сброшены)
 	}
 
-	enqueueTask(username: string, intent: TaskIntent): TaskAck {
-		const player = this.players.get(username);
-		if (!player) {
-			return { ok: false, reason: TASK_REFUSAL.NO_CHARACTER };
-		}
+	enqueueTask(
+		username: string,
+		intent: TaskIntent,
+	): Effect.Effect<void, SimTaskRefusedError | SimQueueClosedError> {
+		return Effect.gen(
+			function* (this: StubSim) {
+				const player = this.players.get(username);
+				if (!player) {
+					return yield* new SimTaskRefusedError({
+						username,
+						reason: TASK_REFUSAL.NO_CHARACTER,
+					});
+				}
 
-		const now = Date.now();
-		const base = {
-			type: "ACTION_COMPLETED" as const,
-			username,
-			orderId: player.orderId,
-			finishedAt: now,
-			action: { kind: intent.kind, targetId: 0, startedAt: player.startedAt },
-		};
+				const now = Date.now();
+				const base = {
+					type: SIM_EVENT_TYPE.ACTION_COMPLETED,
+					username,
+					orderId: player.orderId,
+					finishedAt: now,
+					action: {
+						kind: intent.kind,
+						targetId: 0,
+						startedAt: player.startedAt,
+					},
+				};
 
-		if (intent.kind === ACTION_KIND.PUT) {
-			if (!this.options.allowedIngredientIds.has(intent.ingredientId)) {
-				return { ok: false, reason: TASK_REFUSAL.UNKNOWN_INGREDIENT };
-			}
-			player.layers.push(intent.ingredientId);
-			this.events.onActionCompleted({
-				...base,
-				sequence: ++this.sequence,
-				action: { ...base.action, ingredientId: intent.ingredientId },
-			});
-			return { ok: true };
-		}
+				if (intent.kind === ACTION_KIND.PUT) {
+					if (!this.options.allowedIngredientIds.has(intent.ingredientId)) {
+						return yield* new SimTaskRefusedError({
+							username,
+							reason: TASK_REFUSAL.UNKNOWN_INGREDIENT,
+						});
+					}
+					player.layers.push(intent.ingredientId);
+					return yield* this.offer(
+						{
+							...base,
+							sequence: ++this.sequence,
+							action: { ...base.action, ingredientId: intent.ingredientId },
+						},
+						username,
+					);
+				}
 
-		if (intent.kind === ACTION_KIND.BIN) {
-			player.layers.length = 0;
-			this.events.onActionCompleted({ ...base, sequence: ++this.sequence });
-			return { ok: true };
-		}
+				if (intent.kind === ACTION_KIND.BIN) {
+					player.layers.length = 0;
+					return yield* this.offer(
+						{ ...base, sequence: ++this.sequence },
+						username,
+					);
+				}
 
-		if (player.layers.length === 0) {
-			return { ok: false, reason: TASK_REFUSAL.TRAY_EMPTY };
-		}
-		this.events.onActionCompleted({
-			...base,
-			sequence: ++this.sequence,
-			tray: { username, layers: [...player.layers], frozenAt: now },
-		});
-		return { ok: true };
+				if (player.layers.length === 0) {
+					return yield* new SimTaskRefusedError({
+						username,
+						reason: TASK_REFUSAL.TRAY_EMPTY,
+					});
+				}
+				return yield* this.offer(
+					{
+						...base,
+						sequence: ++this.sequence,
+						tray: { username, layers: [...player.layers], frozenAt: now },
+					},
+					username,
+				);
+			}.bind(this),
+		);
 	}
 
 	cancelOrder(username: string, _reason: CancelReason): void {
@@ -104,9 +127,16 @@ export class StubSim implements ISimPort {
 		if (player) player.layers.length = 0;
 	}
 
-	despawn(username: string): void {
-		if (!this.players.delete(username)) return;
-		this.events.onCharacterRemoved({ type: "CHARACTER_REMOVED", username });
+	despawn(username: string): Effect.Effect<void, SimQueueClosedError> {
+		return Effect.gen(
+			function* (this: StubSim) {
+				if (!this.players.delete(username)) return;
+				return yield* this.offer(
+					{ type: SIM_EVENT_TYPE.CHARACTER_REMOVED, username },
+					username,
+				);
+			}.bind(this),
+		);
 	}
 
 	getTraySnapshot(username: string): ITraySnapshot | undefined {
@@ -118,12 +148,25 @@ export class StubSim implements ISimPort {
 	getSnapshot(): SimSnapshot {
 		return {
 			simTime: Date.now(),
-			characters: [...this.players.values()].map((p) => ({
-				username: p.username,
+			characters: [...this.players.values()].map((player) => ({
+				username: player.username,
 				x: 0,
 				y: 0,
-				tray: [...p.layers],
+				tray: [...player.layers],
 			})),
 		};
+	}
+
+	private offer(
+		event: SimOutEvent,
+		username: string,
+	): Effect.Effect<void, SimQueueClosedError> {
+		return Queue.offer(this.eventQueue, event).pipe(
+			Effect.flatMap((offered) =>
+				offered
+					? Effect.void
+					: Effect.fail(new SimQueueClosedError({ username })),
+			),
+		);
 	}
 }

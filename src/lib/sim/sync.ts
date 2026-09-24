@@ -1,6 +1,7 @@
 import type { SessionManager } from "../core/game/session-manager";
 import type { ISimPort } from "../core/game/sim-port";
 import { MENU_ITEMS } from "../core/data/menu";
+import { makeSimEventQueue } from "../core/game/sim-port";
 import { StubSim } from "./stub";
 
 /** INGREDIENTS из рецептов + id простых предметов — валидные `!put`. */
@@ -18,7 +19,7 @@ function collectAllowedIngredientIds(): Set<string> {
 
 /** Единственное место, знающее оба слоя: SessionManager (RULE CORE) ↔ SIM. */
 export function connectSim(sessionManager: SessionManager): ISimPort {
-	const sim = new StubSim(sessionManager, {
+	const sim = new StubSim(makeSimEventQueue(), {
 		allowedIngredientIds: collectAllowedIngredientIds(),
 	});
 	sessionManager.attachPort(sim);

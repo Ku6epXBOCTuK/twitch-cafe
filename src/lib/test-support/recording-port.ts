@@ -1,13 +1,21 @@
+import { Effect, Queue } from "effect";
 import type { IOrder } from "../core/types/order";
 import type { ITraySnapshot } from "../core/types/tray";
 import {
 	ACTION_KIND,
+	SIM_EVENT_TYPE,
 	type CancelReason,
-	type TaskAck,
+	type SimOutEvent,
+	type SimSnapshot,
 	type TaskIntent,
 } from "../core/game/sim-dto";
-import type { ISimEvents, ISimPort } from "../core/game/sim-port";
-import type { SimSnapshot } from "../core/game/sim-dto";
+import {
+	makeSimEventQueue,
+	SimQueueClosedError,
+	type ISimEvents,
+	type ISimPort,
+	type SimEventQueue,
+} from "../core/game/sim-port";
 
 export class RecordingPort implements ISimPort {
 	events: ISimEvents | null = null;
@@ -19,6 +27,8 @@ export class RecordingPort implements ISimPort {
 	trayLayers: string[] = [];
 	clearTrayCalls = 0;
 
+	constructor(readonly eventQueue: SimEventQueue = makeSimEventQueue()) {}
+
 	attach(events: ISimEvents): void {
 		this.events = events;
 	}
@@ -28,28 +38,41 @@ export class RecordingPort implements ISimPort {
 		this.orderIds.set(username, order.id);
 	}
 
-	enqueueTask(username: string, intent: TaskIntent): TaskAck {
-		this.tasks.push({ username, intent });
-		if (intent.kind === ACTION_KIND.SERVE) {
-			this.events?.onActionCompleted({
-				type: "ACTION_COMPLETED",
-				username,
-				orderId: this.orderIds.get(username) ?? "",
-				sequence: ++this.sequence,
-				finishedAt: Date.now(),
-				action: { kind: ACTION_KIND.SERVE, targetId: 0, startedAt: 0 },
-				tray: {
-					username,
-					layers: [...this.trayLayers],
-					frozenAt: Date.now(),
-				},
-			});
-			return { ok: true };
-		}
-		if (intent.kind === ACTION_KIND.BIN) this.trayLayers = [];
-		if (intent.kind === ACTION_KIND.PUT)
-			this.trayLayers.push(intent.ingredientId);
-		return { ok: true };
+	enqueueTask(
+		username: string,
+		intent: TaskIntent,
+	): Effect.Effect<void, SimQueueClosedError> {
+		return Effect.gen(
+			function* (this: RecordingPort) {
+				this.tasks.push({ username, intent });
+				if (intent.kind === ACTION_KIND.SERVE) {
+					return yield* this.offer(
+						{
+							type: SIM_EVENT_TYPE.ACTION_COMPLETED,
+							username,
+							orderId: this.orderIds.get(username) ?? "",
+							sequence: ++this.sequence,
+							finishedAt: Date.now(),
+							action: {
+								kind: ACTION_KIND.SERVE,
+								targetId: 0,
+								startedAt: 0,
+							},
+							tray: {
+								username,
+								layers: [...this.trayLayers],
+								frozenAt: Date.now(),
+							},
+						},
+						username,
+					);
+				}
+				if (intent.kind === ACTION_KIND.BIN) this.trayLayers = [];
+				if (intent.kind === ACTION_KIND.PUT) {
+					this.trayLayers.push(intent.ingredientId);
+				}
+			}.bind(this),
+		);
 	}
 
 	cancelOrder(_username: string, reason: CancelReason): void {
@@ -61,7 +84,12 @@ export class RecordingPort implements ISimPort {
 		this.trayLayers = [];
 	}
 
-	despawn(): void {}
+	despawn(username: string): Effect.Effect<void, SimQueueClosedError> {
+		return this.offer(
+			{ type: SIM_EVENT_TYPE.CHARACTER_REMOVED, username },
+			username,
+		);
+	}
 
 	getTraySnapshot(username: string): ITraySnapshot {
 		return { username, layers: [...this.trayLayers], frozenAt: 0 };
@@ -69,5 +97,18 @@ export class RecordingPort implements ISimPort {
 
 	getSnapshot(): SimSnapshot {
 		return { simTime: 0, characters: [] };
+	}
+
+	private offer(
+		event: SimOutEvent,
+		username: string,
+	): Effect.Effect<void, SimQueueClosedError> {
+		return Queue.offer(this.eventQueue, event).pipe(
+			Effect.flatMap((offered) =>
+				offered
+					? Effect.void
+					: Effect.fail(new SimQueueClosedError({ username })),
+			),
+		);
 	}
 }

@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer, Scope } from "effect";
+import { Duration, Effect, Layer, Queue, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { ORDER_CONFIG } from "../config";
@@ -57,7 +57,9 @@ describe("SessionManager Effect lifecycle", () => {
 		expect(result._tag).toBe("Failure");
 		if (result._tag === "Failure") {
 			expect(result.failure._tag).toBe("TaskRefused");
-			expect(result.failure.reason).toBe("no_character");
+			if (result.failure._tag === "TaskRefused") {
+				expect(result.failure.reason).toBe("no_character");
+			}
 		}
 	});
 
@@ -113,6 +115,34 @@ describe("SessionManager Effect lifecycle", () => {
 		expect(result.xpAfterEvents).toBe(result.xpAfterServe);
 	});
 
+	it("duplicate queue delivery does not apply a terminal transition twice", async () => {
+		const { order, port, sessionManager } = setup("queue-duplicate");
+		const result = await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sessionManager.takeOrderEffect("alice", 0);
+				port.trayLayers = [burger.id];
+				yield* sessionManager.serveEffect("alice");
+				const xpAfterServe = sessionManager.getXp("alice");
+				const event = serveEvent("alice", order.id, 1);
+				yield* Queue.offer(port.eventQueue, event);
+				yield* Queue.offer(port.eventQueue, event);
+				yield* TestClock.adjust(Duration.millis(1));
+				return {
+					orderStatus: sessionManager.getOrder("alice")?.status,
+					xpAfterServe,
+					xpAfterDuplicate: sessionManager.getXp("alice"),
+				};
+			}),
+		);
+
+		expect(result.orderStatus).toBe(ORDER_STATUS.COMPLETED);
+		expect(result.xpAfterDuplicate).toBe(result.xpAfterServe);
+	});
+
 	it("timeout after serve does not change XP", async () => {
 		const { port, sessionManager } = setup("serve-then-timeout");
 		const result = await run(
@@ -162,6 +192,28 @@ describe("SessionManager Effect lifecycle", () => {
 		expect(result.orderStatus).toBe(ORDER_STATUS.PENDING);
 		expect(result.xpAfterStop).toBe(result.xpBeforeStop);
 		expect(result.cancels).toEqual([]);
+	});
+
+	it("despawn during a pending order expires it with leave", async () => {
+		const { port, sessionManager } = setup("despawn-order");
+		const result = await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sessionManager.takeOrderEffect("alice", 0);
+				yield* port.despawn("alice");
+				yield* TestClock.adjust(Duration.millis(1));
+				return {
+					orderStatus: sessionManager.getOrder("alice")?.status,
+					cancels: [...port.cancels],
+				};
+			}),
+		);
+
+		expect(result.orderStatus).toBe(ORDER_STATUS.EXPIRED);
+		expect(result.cancels).toEqual(["leave"]);
 	});
 
 	it("nextDish uses Effect Clock for the sealed snapshot", async () => {

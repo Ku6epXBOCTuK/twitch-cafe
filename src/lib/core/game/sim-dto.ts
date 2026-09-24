@@ -64,10 +64,20 @@ export interface SimSnapshot {
 	characters: SimCharacterSnapshot[];
 }
 
+export const SIM_EVENT_TYPE = {
+	ACTION_STARTED: "ACTION_STARTED",
+	ACTION_COMPLETED: "ACTION_COMPLETED",
+	CHARACTER_REMOVED: "CHARACTER_REMOVED",
+} as const;
+
 export type SimOutEvent =
-	| { type: "ACTION_STARTED"; username: string; action: ActionInfo }
 	| {
-			type: "ACTION_COMPLETED";
+			type: typeof SIM_EVENT_TYPE.ACTION_STARTED;
+			username: string;
+			action: ActionInfo;
+	  }
+	| {
+			type: typeof SIM_EVENT_TYPE.ACTION_COMPLETED;
 			username: string;
 			orderId: string;
 			sequence: number;
@@ -75,7 +85,10 @@ export type SimOutEvent =
 			action: ActionInfo;
 			tray?: ITraySnapshot;
 	  }
-	| { type: "CHARACTER_REMOVED"; username: string };
+	| {
+			type: typeof SIM_EVENT_TYPE.CHARACTER_REMOVED;
+			username: string;
+	  };
 
 /** Те же типы для ISimEvents — без дублирования структур. */
 export type ActionStartedEvent = Extract<

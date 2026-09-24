@@ -11,10 +11,13 @@ import type {
 	BusyError,
 	NextDishResult,
 	SessionManager,
+	ServeCancelledError,
+	ServeExpiredError,
 	TakeOrderResult,
 	TaskRefusedError,
 } from "../core/game/session-manager";
 import { EmptySlotError } from "../core/game/incoming-orders";
+import type { SimQueueClosedError } from "../core/game/sim-port";
 import {
 	ACTION_KIND,
 	OPERATION,
@@ -150,6 +153,8 @@ function emitNextFailure(
 type TakeEffect = ReturnType<SessionManager["takeOrderEffect"]>;
 type NextEffect = ReturnType<SessionManager["nextDishEffect"]>;
 type TaskEffect = ReturnType<SessionManager["serveEffect"]>;
+type CommandEffectError =
+	SimQueueClosedError | ServeExpiredError | ServeCancelledError;
 
 function runTake(
 	effect: TakeEffect,
@@ -190,7 +195,7 @@ function runTask(
 	effect: TaskEffect,
 	onSuccess: () => void,
 	onFailure: (error: TaskRefusedError) => void,
-): Effect.Effect<void, never> {
+): Effect.Effect<void, CommandEffectError> {
 	return effect.pipe(
 		Effect.flatMap(() => Effect.sync(onSuccess)),
 		Effect.catchTag("TaskRefused", (error) =>
@@ -205,7 +210,7 @@ export function processMessage(
 	sm: SessionManager,
 	sink: CommandSink,
 	correlationId = createCommandId(),
-): Effect.Effect<void, never> {
+): Effect.Effect<void, CommandEffectError> {
 	const cmd = CommandParser.parse(raw);
 	if (!cmd) return Effect.void;
 
