@@ -93,6 +93,47 @@ describe("CommandParser: next", () => {
 	});
 });
 
+describe("CommandParser: unique prefixes", () => {
+	it("resolves unique prefixes and preserves arguments", () => {
+		const put = CommandParser.parse("!по сыр");
+		const putShort = CommandParser.parse("!пол сыр");
+		const putShorter = CommandParser.parse("!поло сыр");
+		const serve = CommandParser.parse("!от");
+		const menu = CommandParser.parse("!за");
+		const bin = CommandParser.parse("!му");
+		const next = CommandParser.parse("!да");
+		const take = CommandParser.parse("!вз 2");
+		const recipe = CommandParser.parse("!ре кола");
+
+		expect(put?.kind).toBe("put");
+		expect(put?.kind === "put" && put.ingredient?.id).toBe("cheese");
+		expect(putShort?.kind).toBe("put");
+		expect(putShort?.kind === "put" && putShort.ingredient?.id).toBe("cheese");
+		expect(putShorter?.kind).toBe("put");
+		expect(putShorter?.kind === "put" && putShorter.ingredient?.id).toBe(
+			"cheese",
+		);
+		expect(serve).toEqual({ kind: "serve" });
+		expect(menu).toEqual({ kind: "menu" });
+		expect(bin).toEqual({ kind: "bin" });
+		expect(next).toEqual({ kind: "next" });
+		expect(take).toEqual({ kind: "take", slot: 2, token: "2" });
+		expect(recipe?.kind).toBe("recipe");
+		expect(recipe?.kind === "recipe" && recipe.item?.id).toBe("cola");
+	});
+
+	it("rejects ambiguous and unknown prefixes", () => {
+		expect(CommandParser.parse("!с")).toBeNull();
+		expect(CommandParser.parse("!х")).toBeNull();
+		expect(CommandParser.parse("!п")?.kind).toBe("put");
+	});
+
+	it("gives an exact alias priority over prefix matching", () => {
+		expect(CommandParser.parse("!order")?.kind).toBe("menu");
+		expect(CommandParser.parse("!add сыр")?.kind).toBe("put");
+	});
+});
+
 describe("resolveMenuItem", () => {
 	it("по id, полному имени и подстроке", () => {
 		expect(resolveMenuItem("burger")?.id).toBe("burger");
