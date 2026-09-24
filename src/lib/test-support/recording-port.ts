@@ -12,13 +12,11 @@ import {
 import {
 	makeSimEventQueue,
 	SimQueueClosedError,
-	type ISimEvents,
 	type ISimPort,
 	type SimEventQueue,
 } from "../core/game/sim-port";
 
 export class RecordingPort implements ISimPort {
-	events: ISimEvents | null = null;
 	private readonly orderIds = new Map<string, string>();
 	private sequence = 0;
 	startOrders: IOrder[] = [];
@@ -28,10 +26,6 @@ export class RecordingPort implements ISimPort {
 	clearTrayCalls = 0;
 
 	constructor(readonly eventQueue: SimEventQueue = makeSimEventQueue()) {}
-
-	attach(events: ISimEvents): void {
-		this.events = events;
-	}
 
 	startOrder(username: string, order: IOrder): void {
 		this.startOrders.push(order);

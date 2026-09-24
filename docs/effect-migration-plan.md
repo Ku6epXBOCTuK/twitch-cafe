@@ -2,7 +2,7 @@
 
 > Статус: проектный план архитектурной миграции.
 >
-> Обновлено: 2026-09-23.
+> Обновлено: 2026-09-24.
 >
 > Решение о версии зафиксировано в [`effect-v4-rc-adr.md`](effect-v4-rc-adr.md).
 >
@@ -49,8 +49,8 @@ spike не проходит, миграция останавливается н�
 
 ## 2. Текущее состояние проекта
 
-Baseline на момент планирования: `pnpm test`, `pnpm check` и `pnpm lint`
-проходят; Vitest запускает 11 test-файлов и 101 тест.
+Текущий baseline: `pnpm test`, `pnpm check` и `pnpm lint` проходят; Vitest
+запускает 15 test-файлов и 118 тестов.
 
 Основные места, которые предстоит сделать надёжнее:
 
@@ -258,7 +258,7 @@ interface GameRuntime {
   `Schema` и `TestClock`;
 - проверить smoke-тест в Vitest и production build;
 - определить, где находится production runtime;
-- определить, является ли SSE polling частью миграции или остаётся адаптером;
+- выбрать событийный `Stream`-контракт SSE с initial replay и scoped cleanup;
 - зафиксировать способ graceful shutdown и HMR cleanup.
 
 **Готово:** ADR принят; smoke-тест подтверждает нужные v4 API; до начала кода
@@ -296,7 +296,7 @@ interface GameRuntime {
 - описать сервисы через `Context` и production/test `Layer`;
 - создать `GameRuntime` с `start` и `shutdown`;
 - сделать `StubSim` доступным через тестовый и production layer;
-- перенести module-local singleton из `getGame()` в управляемый runtime;
+- перенести module-local bootstrap в управляемый `GameRuntime`;
 - добавить проверку повторного `start` и `shutdown`.
 
 **Не делать на этом этапе:** менять весь `SessionManager` или подключать Effect
@@ -417,6 +417,10 @@ snapshot используется только для первичного со�
 
 **Готово:** legacy-типы не используются в production; адаптеры удалены или имеют
 явную дату удаления; нет скрытых lifecycle-обходов.
+
+**Выполнено 2026-09-24:** удалены `TaskAck`, sync-методы `SessionManager` и
+`IncomingOrders`, `RecipeBook`-result union, `ISimEvents` и module-local
+`getGame`; добавлен `pnpm check:legacy`, тесты переведены на Effect/очередь.
 
 ### Этап 9. Production hardening
 

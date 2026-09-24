@@ -42,8 +42,6 @@ export const CANCEL_REASON = {
 
 export type CancelReason = (typeof CANCEL_REASON)[keyof typeof CANCEL_REASON];
 
-export type TaskAck = { ok: true } | { ok: false; reason: TaskRefusal };
-
 export interface ActionInfo {
 	kind: ActionKind;
 	ingredientId?: IngredientId;
@@ -90,7 +88,6 @@ export type SimOutEvent =
 			username: string;
 	  };
 
-/** Те же типы для ISimEvents — без дублирования структур. */
 export type ActionStartedEvent = Extract<
 	SimOutEvent,
 	{ type: "ACTION_STARTED" }

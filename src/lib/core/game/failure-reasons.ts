@@ -16,9 +16,3 @@ export const NEXT_DISH_REASON = {
 
 export type NextDishReason =
 	(typeof NEXT_DISH_REASON)[keyof typeof NEXT_DISH_REASON];
-
-export const RECIPE_REASON = {
-	UNKNOWN_ITEM: "unknown_item",
-} as const;
-
-export type RecipeReason = (typeof RECIPE_REASON)[keyof typeof RECIPE_REASON];

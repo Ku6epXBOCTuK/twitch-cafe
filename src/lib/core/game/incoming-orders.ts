@@ -1,22 +1,7 @@
-import {
-	Clock,
-	Data,
-	Duration,
-	Effect,
-	Exit,
-	Fiber,
-	Result,
-	Schedule,
-	Scope,
-} from "effect";
+import { Data, Duration, Effect, Fiber, Schedule, Scope } from "effect";
 import { ORDER_STATUS, type IOrder } from "../types/order";
 import { OrderFactory } from "../services/order-factory";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
-import { TAKE_ORDER_REASON } from "./failure-reasons";
-
-export type TakeOrderResult =
-	| { ok: true; order: IOrder }
-	| { ok: false; reason: typeof TAKE_ORDER_REASON.EMPTY_SLOT };
 
 export class EmptySlotError extends Data.TaggedError("EmptySlot")<{
 	readonly slot: number;
@@ -28,7 +13,6 @@ export class IncomingOrders {
 	private readonly slots: (IOrder | null)[];
 	private readonly burnFibers = new Map<number, Fiber.Fiber<void, never>>();
 	private loopFiber: Fiber.Fiber<void, never> | null = null;
-	private legacyScope: Scope.Closeable | null = null;
 	private running = false;
 
 	constructor(
@@ -37,22 +21,6 @@ export class IncomingOrders {
 		private readonly onChange: () => void = () => {},
 	) {
 		this.slots = Array.from({ length: config.SLOT_COUNT }, () => null);
-	}
-
-	start(): void {
-		if (this.loopFiber) return;
-		this.runWithLegacyServices(this.startEffect());
-	}
-
-	stop(): void {
-		Effect.runSync(this.stopEffect());
-		const scope = this.legacyScope;
-		this.legacyScope = null;
-		if (scope) Effect.runSync(Scope.close(scope, Exit.void));
-	}
-
-	isRunning(): boolean {
-		return this.running;
 	}
 
 	startEffect(): TimedEffect<void> {
@@ -101,6 +69,10 @@ export class IncomingOrders {
 		);
 	}
 
+	isRunning(): boolean {
+		return this.running;
+	}
+
 	getSlots(): readonly (IOrder | null)[] {
 		return [...this.slots];
 	}
@@ -126,14 +98,6 @@ export class IncomingOrders {
 		);
 	}
 
-	takeOrder(slotIndex: number): TakeOrderResult {
-		const result = Effect.runSync(
-			Effect.result(this.takeOrderEffect(slotIndex)),
-		);
-		if (Result.isSuccess(result)) return { ok: true, order: result.success };
-		return { ok: false, reason: TAKE_ORDER_REASON.EMPTY_SLOT };
-	}
-
 	spawnEffect(): TimedEffect<void> {
 		return Effect.gen(
 			function* (this: IncomingOrders) {
@@ -155,10 +119,6 @@ export class IncomingOrders {
 		);
 	}
 
-	spawn(): void {
-		this.runWithLegacyServices(this.spawnEffect());
-	}
-
 	private burn(orderId: string): void {
 		const index = this.slots.findIndex((slot) => slot?.id === orderId);
 		const order = index === -1 ? null : this.slots[index];
@@ -168,24 +128,5 @@ export class IncomingOrders {
 		order.status = ORDER_STATUS.EXPIRED;
 		this.slots[index] = null;
 		this.onChange();
-	}
-
-	private ensureLegacyScope(): Scope.Closeable {
-		if (this.legacyScope) return this.legacyScope;
-		this.legacyScope = Scope.makeUnsafe("sequential");
-		return this.legacyScope;
-	}
-
-	private runWithLegacyServices<A>(effect: TimedEffect<A>): A {
-		const scope = this.ensureLegacyScope();
-		return Effect.runSync(
-			Scope.provide(scope)(
-				Effect.provideService(
-					Effect.provideService(effect, GameConfig, this.config),
-					Clock.Clock,
-					Clock.Clock.defaultValue(),
-				),
-			),
-		);
 	}
 }

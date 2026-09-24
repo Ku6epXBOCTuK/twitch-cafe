@@ -3,18 +3,9 @@ import { burger, cola } from "#lib/test-support";
 import { RecipeBook } from "./recipe-book";
 
 describe("RecipeBook", () => {
-	it("show ok: возвращает блюдо и запоминает его", () => {
-		const book = new RecipeBook();
-		const res = book.show(burger);
-		expect(res).toEqual({ ok: true, item: burger });
-		expect(book.getCurrent()).toBe(burger);
-	});
-
-	it("show unknown: отказ, current не сбрасывается", () => {
+	it("show запоминает блюдо", () => {
 		const book = new RecipeBook();
 		book.show(burger);
-
-		expect(book.show(null)).toEqual({ ok: false, reason: "unknown_item" });
 		expect(book.getCurrent()).toBe(burger);
 	});
 

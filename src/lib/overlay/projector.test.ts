@@ -1,54 +1,67 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ORDER_CONFIG } from "../core/config";
-import {
-	burger,
-	BURGER_IDS,
-	cola,
-	makeOrder,
-	RecordingPort,
-} from "#lib/test-support";
-import { SessionManager } from "../core/game/session-manager";
-import { project } from "./projector";
+import type { IMenuItem } from "../core/types/menu_item";
+import type { IOrder } from "../core/types/order";
+import type {
+	SessionSnapshot,
+	SessionSnapshotPlayer,
+} from "../core/game/session-manager";
+import { ORDER_ITEM_STATE, ORDER_STATUS } from "../core/types/order";
+import { burger, BURGER_IDS, cola, makeOrder } from "#lib/test-support";
+import { projectSnapshot } from "./projector";
 
 const CREATED_AT_MS = 1000;
 const DEADLINE_MS = CREATED_AT_MS + ORDER_CONFIG.ORDER_TIME_LIMIT_MS;
 
-function setup(orders: ReturnType<typeof makeOrder>[]) {
-	const port = new RecordingPort();
-	let index = 0;
-	const sm = new SessionManager(() => orders[index++]!);
-	sm.attachPort(port);
-	port.attach(sm);
-	return { port, sm };
+function order(
+	id: string,
+	items: readonly IMenuItem[],
+	status: IOrder["status"] = ORDER_STATUS.PENDING,
+) {
+	const result = makeOrder({
+		id,
+		items,
+		createdAt: new Date(CREATED_AT_MS),
+	});
+	result.status = status;
+	return result;
 }
 
-beforeEach(() => {
-	vi.useFakeTimers();
-});
-afterEach(() => {
-	vi.useRealTimers();
-});
+function player(
+	username: string,
+	activeOrder: ReturnType<typeof order>,
+	overrides: Partial<SessionSnapshotPlayer> = {},
+): SessionSnapshotPlayer {
+	return {
+		username,
+		order: activeOrder,
+		xp: 0,
+		currentItemIndex: 0,
+		sealed: [],
+		lastResult: null,
+		lastSequence: 0,
+		...overrides,
+	};
+}
 
-describe("project: incoming", () => {
+function snapshot(
+	incoming: SessionSnapshot["incoming"],
+	sessions: SessionSnapshot["sessions"] = [],
+	recipe: SessionSnapshot["recipe"] = null,
+): SessionSnapshot {
+	return { incoming, sessions, recipe };
+}
+
+describe("projectSnapshot: incoming", () => {
 	it("непустые слоты → имена блюд, strictness, deadline", () => {
-		const { sm } = setup([
-			makeOrder({
-				id: "o1",
-				items: [burger],
-				strictness: 0.2,
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-			makeOrder({
-				id: "o2",
-				items: [cola, cola],
-				strictness: 0.9,
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-		]);
-		sm.incomingOrders.spawn();
-		sm.incomingOrders.spawn();
+		const first = order("o1", [burger]);
+		first.customer.strictness = 0.2;
+		const second = order("o2", [cola, cola]);
+		second.customer.strictness = 0.9;
 
-		expect(project(sm).incoming).toEqual([
+		const result = projectSnapshot(snapshot([first, null, second]));
+
+		expect(result.incoming).toEqual([
 			{
 				slot: 1,
 				id: "o1",
@@ -57,7 +70,7 @@ describe("project: incoming", () => {
 				deadline: DEADLINE_MS,
 			},
 			{
-				slot: 2,
+				slot: 3,
 				id: "o2",
 				dishes: ["Кола", "Кола"],
 				strictness: 0.9,
@@ -67,23 +80,10 @@ describe("project: incoming", () => {
 	});
 
 	it("взятый слот исчезает из incoming, номера слотов не сдвигаются", () => {
-		const { sm } = setup([
-			makeOrder({
-				id: "o1",
-				items: [burger],
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-			makeOrder({
-				id: "o2",
-				items: [cola],
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-		]);
-		sm.incomingOrders.spawn();
-		sm.incomingOrders.spawn();
-
-		expect(sm.takeOrder("alice", 0)).toMatchObject({ ok: true });
-		expect(project(sm).incoming).toEqual([
+		const first = order("o1", [burger]);
+		const second = order("o2", [cola]);
+		const result = projectSnapshot(snapshot([null, second]));
+		expect(result.incoming).toEqual([
 			{
 				slot: 2,
 				id: "o2",
@@ -92,22 +92,18 @@ describe("project: incoming", () => {
 				deadline: DEADLINE_MS,
 			},
 		]);
+		expect(first.id).toBe("o1");
 	});
 });
 
-describe("project: execution и players", () => {
+describe("projectSnapshot: execution и players", () => {
 	it("сессия с двумя блюдами: dishes и order до/после !next", () => {
-		const { port, sm } = setup([
-			makeOrder({
-				id: "o1",
-				items: [burger, cola],
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-		]);
-		sm.incomingOrders.spawn();
-		sm.takeOrder("alice", 0);
+		const activeOrder = order("o1", [burger, cola]);
+		const initial = projectSnapshot(
+			snapshot([], [player("alice", activeOrder)]),
+		);
 
-		expect(project(sm).execution).toEqual([
+		expect(initial.execution).toEqual([
 			{
 				id: "o1",
 				performer: "alice",
@@ -118,7 +114,7 @@ describe("project: execution и players", () => {
 				deadline: DEADLINE_MS,
 			},
 		]);
-		expect(project(sm).players).toEqual([
+		expect(initial.players).toEqual([
 			{
 				username: "alice",
 				x: 0,
@@ -132,14 +128,24 @@ describe("project: execution и players", () => {
 			},
 		]);
 
-		port.trayLayers = BURGER_IDS;
-		expect(sm.nextDish("alice")).toEqual({ ok: true });
+		activeOrder.items[0].state = ORDER_ITEM_STATE.SEALED;
+		const afterNext = projectSnapshot(
+			snapshot(
+				[],
+				[
+					player("alice", activeOrder, {
+						currentItemIndex: 1,
+						sealed: [{ username: "alice", layers: BURGER_IDS, frozenAt: 2000 }],
+					}),
+				],
+			),
+		);
 
-		expect(project(sm).execution[0].dishes).toEqual([
+		expect(afterNext.execution[0].dishes).toEqual([
 			{ name: "Бургер", done: true },
 			{ name: "Кола", done: false },
 		]);
-		expect(project(sm).players[0].order).toEqual({
+		expect(afterNext.players[0].order).toEqual({
 			dishes: [
 				{ kind: "burger", done: true },
 				{ kind: "drink", done: false },
@@ -148,63 +154,33 @@ describe("project: execution и players", () => {
 	});
 
 	it("после serve: исполнителя нет, игрок остаётся с order: null", () => {
-		const { port, sm } = setup([
-			makeOrder({
-				id: "o1",
-				items: [burger, cola],
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-		]);
-		sm.incomingOrders.spawn();
-		sm.takeOrder("alice", 0);
-		port.trayLayers = BURGER_IDS;
-		sm.nextDish("alice");
-		port.trayLayers = [cola.id];
-
-		expect(sm.serve("alice")).toEqual({ ok: true });
-		const snapshot = project(sm);
-		expect(snapshot.execution).toEqual([]);
-		expect(snapshot.players).toEqual([
+		const completed = order("o1", [burger, cola], ORDER_STATUS.COMPLETED);
+		const result = projectSnapshot(snapshot([], [player("alice", completed)]));
+		expect(result.execution).toEqual([]);
+		expect(result.players).toEqual([
 			{ username: "alice", x: 0, y: 0, order: null },
 		]);
 	});
 
 	it("после timeout: исполнителя нет, игрок остаётся с order: null", () => {
-		const { sm } = setup([
-			makeOrder({
-				id: "o1",
-				items: [cola],
-				createdAt: new Date(CREATED_AT_MS),
-			}),
-		]);
-		sm.incomingOrders.spawn();
-		const taken = sm.takeOrder("alice", 0);
-		if (!taken.ok) throw new Error("takeOrder failed");
-
-		sm.onTimeout("alice", taken.order);
-		const snapshot = project(sm);
-		expect(snapshot.execution).toEqual([]);
-		expect(snapshot.players).toEqual([
+		const expired = order("o1", [cola], ORDER_STATUS.EXPIRED);
+		const result = projectSnapshot(snapshot([], [player("alice", expired)]));
+		expect(result.execution).toEqual([]);
+		expect(result.players).toEqual([
 			{ username: "alice", x: 0, y: 0, order: null },
 		]);
 	});
 });
 
-describe("project: recipe", () => {
-	it("без show → null; бургер → ингредиенты; кола → пустой список", () => {
-		const { sm } = setup([]);
-
-		expect(project(sm).recipe).toBeNull();
-
-		sm.recipeBook.show(burger);
-		expect(project(sm).recipe).toEqual({
+describe("projectSnapshot: recipe", () => {
+	it("без recipe → null; бургер → ингредиенты; кола → пустой список", () => {
+		expect(projectSnapshot(snapshot([], [], null)).recipe).toBeNull();
+		expect(projectSnapshot(snapshot([], [], burger)).recipe).toEqual({
 			id: "burger",
 			name: "Бургер",
 			ingredients: ["Нижняя булочка", "Котлета", "Сыр", "Верхняя булочка"],
 		});
-
-		sm.recipeBook.show(cola);
-		expect(project(sm).recipe).toEqual({
+		expect(projectSnapshot(snapshot([], [], cola)).recipe).toEqual({
 			id: "cola",
 			name: "Кола",
 			ingredients: [],

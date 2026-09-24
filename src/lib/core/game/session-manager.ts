@@ -1,12 +1,12 @@
 import {
 	Clock,
+	Cause,
 	Data,
 	Deferred,
 	Duration,
 	Effect,
 	Exit,
 	Fiber,
-	Result,
 	Match,
 	Queue,
 	Scope,
@@ -17,7 +17,6 @@ import type { IOrder } from "../types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import {
 	SimTaskRefusedError,
-	type ISimEvents,
 	type ISimPort,
 	type SimEventQueue,
 	type SimQueueClosedError,
@@ -31,7 +30,6 @@ import {
 	type CancelReason,
 	type CharacterRemovedEvent,
 	type SimOutEvent,
-	type TaskAck,
 	type TaskIntent,
 	type TaskRefusal,
 } from "./sim-dto";
@@ -42,19 +40,7 @@ import { xpForRating } from "../services/scoring";
 import { OrderFactory } from "../services/order-factory";
 import { EmptySlotError, IncomingOrders } from "./incoming-orders";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
-import {
-	NEXT_DISH_REASON,
-	TAKE_ORDER_REASON,
-	type NextDishReason,
-	type TakeOrderReason,
-} from "./failure-reasons";
 import { RecipeBook } from "./recipe-book";
-
-export type TakeOrderResult =
-	{ ok: true; order: IOrder } | { ok: false; reason: TakeOrderReason };
-
-export type NextDishResult =
-	{ ok: true } | { ok: false; reason: NextDishReason };
 
 export class BusyError extends Data.TaggedError("Busy")<{
 	readonly username: string;
@@ -143,7 +129,7 @@ type TaskEffect = SessionEffect<
 	| ServeCancelledError
 >;
 
-export class SessionManager implements ISimEvents {
+export class SessionManager {
 	private readonly sessions = new Map<string, PlayerSession>();
 	private readonly operationSemaphore = Semaphore.makeUnsafe(1);
 	private readonly simEnqueueSemaphore = Semaphore.makeUnsafe(1);
@@ -166,19 +152,6 @@ export class SessionManager implements ISimEvents {
 			this.notifyChange(),
 		);
 		this.recipeBook = new RecipeBook(() => this.notifyChange());
-	}
-
-	start(): void {
-		if (this.running) return;
-		Effect.runSync(this.provideLegacy(this.startEffect()));
-	}
-
-	stop(): void {
-		Effect.runSync(this.stopEffect());
-	}
-
-	isRunning(): boolean {
-		return this.running;
 	}
 
 	startEffect(): SessionEffect<void, never> {
@@ -366,28 +339,6 @@ export class SessionManager implements ISimEvents {
 		);
 	}
 
-	takeOrder(username: string, slotIndex: number): TakeOrderResult {
-		return Effect.runSync(
-			this.provideLegacy(
-				this.takeOrderEffect(username, slotIndex).pipe(
-					Effect.map((order): TakeOrderResult => ({ ok: true, order })),
-					Effect.catchTag("Busy", () =>
-						Effect.succeed({
-							ok: false,
-							reason: TAKE_ORDER_REASON.BUSY,
-						} as const),
-					),
-					Effect.catchTag("EmptySlot", () =>
-						Effect.succeed({
-							ok: false,
-							reason: TAKE_ORDER_REASON.EMPTY_SLOT,
-						} as const),
-					),
-				),
-			),
-		);
-	}
-
 	putIngredientEffect(username: string, ingredientId: string): TaskEffect {
 		return this.enqueueTaskEffect(username, {
 			kind: ACTION_KIND.PUT,
@@ -437,25 +388,6 @@ export class SessionManager implements ISimEvents {
 		return this.enqueueTaskEffect(username, { kind: ACTION_KIND.BIN });
 	}
 
-	putIngredient(username: string, ingredientId: string): TaskAck {
-		return this.runLegacyTaskEffect(
-			this.enqueueTaskRawEffect(username, {
-				kind: ACTION_KIND.PUT,
-				ingredientId,
-			}),
-		);
-	}
-
-	serve(username: string): TaskAck {
-		return this.runLegacyServe(username);
-	}
-
-	bin(username: string): TaskAck {
-		return this.runLegacyTaskEffect(
-			this.enqueueTaskRawEffect(username, { kind: ACTION_KIND.BIN }),
-		);
-	}
-
 	nextDishEffect(username: string): NextDishEffect {
 		return this.withPermit(
 			Effect.gen(
@@ -488,60 +420,12 @@ export class SessionManager implements ISimEvents {
 		);
 	}
 
-	nextDish(username: string): NextDishResult {
-		return Effect.runSync(
-			this.provideLegacy(
-				this.nextDishEffect(username).pipe(
-					Effect.map((): NextDishResult => ({ ok: true })),
-					Effect.catchTag("NoOrder", () =>
-						Effect.succeed({
-							ok: false,
-							reason: NEXT_DISH_REASON.NO_ORDER,
-						} as const),
-					),
-					Effect.catchTag("LastItem", () =>
-						Effect.succeed({
-							ok: false,
-							reason: NEXT_DISH_REASON.LAST_ITEM,
-						} as const),
-					),
-					Effect.catchTag("TrayEmpty", () =>
-						Effect.succeed({
-							ok: false,
-							reason: NEXT_DISH_REASON.TRAY_EMPTY,
-						} as const),
-					),
-				),
-			),
-		);
-	}
-
 	getSealedDishes(username: string): ITraySnapshot[] {
 		return this.sessions.get(username)?.sealed ?? [];
 	}
 
 	getTraySnapshot(username: string): ITraySnapshot | undefined {
 		return this.port?.getTraySnapshot(username);
-	}
-
-	onActionStarted(): void {}
-
-	onActionCompleted(event: ActionCompletedEvent): void {
-		this.applyActionCompleted(event);
-	}
-
-	onCharacterRemoved(event: CharacterRemovedEvent): void {
-		this.applyCharacterRemoved(event);
-	}
-
-	onTimeoutEffect(username: string, order: IOrder): Effect.Effect<void> {
-		return this.withPermit(
-			this.expireOrderEffect(username, order, false, CANCEL_REASON.TIMEOUT),
-		);
-	}
-
-	onTimeout(username: string, order: IOrder): void {
-		Effect.runSync(this.provideLegacy(this.onTimeoutEffect(username, order)));
 	}
 
 	private enqueueTaskRawEffect(
@@ -576,54 +460,6 @@ export class SessionManager implements ISimEvents {
 		);
 	}
 
-	private runLegacyTaskEffect(
-		effect: Effect.Effect<void, SimTaskRefusedError | SimQueueClosedError>,
-	): TaskAck {
-		const result = Effect.runSync(Effect.result(effect));
-		if (Result.isSuccess(result)) return { ok: true };
-		if (result.failure._tag === "SimTaskRefused") {
-			return { ok: false, reason: result.failure.reason };
-		}
-		throw result.failure;
-	}
-
-	private runLegacyServe(username: string): TaskAck {
-		const port = this.port;
-		if (!port) return { ok: false, reason: TASK_REFUSAL.NO_CHARACTER };
-		const result = Effect.runSync(
-			Effect.result(
-				this.simEnqueueSemaphore.withPermit(
-					this.enqueueTaskRawEffect(username, { kind: ACTION_KIND.SERVE }),
-				),
-			),
-		);
-		if (Result.isFailure(result)) {
-			if (result.failure._tag === "SimTaskRefused") {
-				return { ok: false, reason: result.failure.reason };
-			}
-			throw result.failure;
-		}
-
-		const orderId = this.sessions.get(username)?.order.id ?? "";
-		while (true) {
-			const event = Effect.runSync(Queue.take(port.eventQueue));
-			if (
-				event.type === "ACTION_COMPLETED" &&
-				event.username === username &&
-				event.orderId === orderId &&
-				event.action.kind === ACTION_KIND.SERVE
-			) {
-				Effect.runSync(
-					this.withPermit(Effect.sync(() => this.applyActionCompleted(event))),
-				);
-				return { ok: true };
-			}
-			Effect.runSync(
-				this.withPermit(Effect.sync(() => this.applySimEvent(event))),
-			);
-		}
-	}
-
 	private startSimEventConsumer(): void {
 		const queue = this.simEventQueue;
 		if (!queue || this.simEventFiber) return;
@@ -634,16 +470,27 @@ export class SessionManager implements ISimEvents {
 					this.withPermit(Effect.sync(() => this.applySimEvent(event))),
 				),
 			),
-		).pipe(
-			Effect.catchDefect((defect) =>
-				Effect.logError("SIM event consumer failed", { defect }),
-			),
 		);
-		this.simEventFiber = Effect.runSync(
+		const fiber = Effect.runSync(
 			Scope.provide(scope)(
 				Effect.forkScoped(consumer, { startImmediately: true }),
 			),
 		);
+		this.simEventFiber = fiber;
+		fiber.addObserver((exit) => {
+			if (this.simEventFiber === fiber) this.simEventFiber = null;
+			if (
+				exit._tag === "Failure" &&
+				!Cause.isDone(exit.cause) &&
+				!Cause.hasInterruptsOnly(exit.cause)
+			) {
+				Effect.runSync(
+					Effect.logError("SIM event consumer failed", {
+						cause: exit.cause,
+					}),
+				);
+			}
+		});
 	}
 
 	private applySimEvent(event: SimOutEvent): void {
@@ -768,15 +615,5 @@ export class SessionManager implements ISimEvents {
 		}
 		this.sessionScope = Scope.makeUnsafe("sequential");
 		return this.sessionScope;
-	}
-
-	private provideLegacy<A, E>(
-		effect: Effect.Effect<A, E>,
-	): Effect.Effect<A, E> {
-		return Effect.provideService(
-			Effect.provideService(effect, GameConfig, this.config),
-			Clock.Clock,
-			Clock.Clock.defaultValue(),
-		);
 	}
 }

@@ -1,14 +1,15 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../core/config";
 import { INGREDIENTS } from "../core/data/menu";
 import type { GameEvent } from "../core/game/game-event";
 import { SessionManager } from "../core/game/session-manager";
+import { DEFAULT_GAME_CONFIG, GameConfig } from "../core/game/game-config";
 import type { IOrder } from "../core/types/order";
 import { ORDER_STATUS } from "../core/types/order";
 import { burger, BURGER_IDS, cola, makeOrder } from "#lib/test-support";
 import { connectSim } from "../sim/sync";
-import { project } from "../overlay/projector";
+import { projectSnapshot } from "../overlay/projector";
 import { processMessage } from "./chat-commands";
 import { ListSink } from "./command-sink";
 
@@ -19,11 +20,28 @@ const fixedBurgerColaOrder = (): IOrder =>
 const fixedColaOrder = (): IOrder =>
 	makeOrder({ id: "cola-order", items: [cola] });
 
+const activeManagers = new Set<SessionManager>();
+
+function runGameSync<A, E>(effect: Effect.Effect<A, E>): A {
+	return Effect.runSync(
+		Effect.provideService(
+			Effect.provideService(effect, GameConfig, DEFAULT_GAME_CONFIG),
+			Clock.Clock,
+			Clock.Clock.defaultValue(),
+		),
+	);
+}
+
 function setup(makeOrder: () => IOrder = fixedBurgerOrder): SessionManager {
 	const sm = new SessionManager(makeOrder);
 	connectSim(sm);
-	sm.incomingOrders.start();
+	activeManagers.add(sm);
+	runGameSync(sm.startEffect());
 	return sm;
+}
+
+function takeOrder(sm: SessionManager, username: string, slot = 0): IOrder {
+	return runGameSync(sm.takeOrderEffect(username, slot));
 }
 
 function warmup(_sm: SessionManager): void {
@@ -36,7 +54,17 @@ async function runMessage(
 	sm: SessionManager,
 	sink: ListSink,
 ): Promise<void> {
-	await Effect.runPromise(processMessage(raw, username, sm, sink));
+	await Effect.runPromise(
+		Effect.provideService(
+			Effect.provideService(
+				processMessage(raw, username, sm, sink),
+				GameConfig,
+				DEFAULT_GAME_CONFIG,
+			),
+			Clock.Clock,
+			Clock.Clock.defaultValue(),
+		),
+	);
 }
 
 async function send(
@@ -62,6 +90,10 @@ beforeEach(() => {
 	vi.useFakeTimers();
 });
 afterEach(() => {
+	for (const sm of activeManagers) {
+		Effect.runSync(sm.stopEffect());
+	}
+	activeManagers.clear();
 	vi.useRealTimers();
 });
 
@@ -70,12 +102,11 @@ describe("беседа: полный игровой цикл", () => {
 		const sm = setup();
 		const alice = "alice";
 		warmup(sm);
-		const res = sm.takeOrder(alice, 0);
-		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
-		expect(res.order.status).toBe(ORDER_STATUS.PENDING);
+		const order = takeOrder(sm, alice, 0);
+		expect(order.status).toBe(ORDER_STATUS.PENDING);
 
 		const menu = expectEvent(await send(sm, "!menu"), "menu_state");
-		expect(menu.type === "menu_state" && menu.order.id).toBe(res.order.id);
+		expect(menu.type === "menu_state" && menu.order.id).toBe(order.id);
 		expect(sm.getXp(alice)).toBe(0);
 
 		const xpBeforeServe = sm.getXp(alice);
@@ -95,9 +126,7 @@ describe("беседа: полный игровой цикл", () => {
 		await runMessage("!put верхняя булочка", alice, sm, new ListSink());
 
 		const served = expectEvent(await send(sm, "!serve"), "order_served");
-		expect(served.type === "order_served" && served.order.id).toBe(
-			res.order.id,
-		);
+		expect(served.type === "order_served" && served.order.id).toBe(order.id);
 		expect(
 			served.type === "order_served" && served.assessment.orderIssues.length,
 		).toBeGreaterThan(0);
@@ -110,7 +139,7 @@ describe("беседа: полный игровой цикл", () => {
 		const sm = setup();
 		const alice = "alice";
 		warmup(sm);
-		sm.takeOrder(alice, 0);
+		takeOrder(sm, alice, 0);
 
 		for (const id of BURGER_IDS) {
 			await runMessage(`!put ${id}`, alice, sm, new ListSink());
@@ -124,8 +153,7 @@ describe("беседа: полный игровой цикл", () => {
 		);
 
 		warmup(sm);
-		const res = sm.takeOrder(alice, 0);
-		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
+		takeOrder(sm, alice, 0);
 		const menu = expectEvent(await send(sm, "!menu"), "menu_state");
 		expect(menu.type === "menu_state" && menu.trayLayers).toEqual([]);
 	});
@@ -133,7 +161,7 @@ describe("беседа: полный игровой цикл", () => {
 	it("!bin очищает поднос", async () => {
 		const sm = setup();
 		warmup(sm);
-		sm.takeOrder("alice", 0);
+		takeOrder(sm, "alice", 0);
 
 		await runMessage("!put сыр", "alice", sm, new ListSink());
 		expectEvent(await send(sm, "!bin"), "tray_cleared");
@@ -145,7 +173,7 @@ describe("беседа: полный игровой цикл", () => {
 		const sm = setup();
 		const alice = "alice";
 		warmup(sm);
-		sm.takeOrder(alice, 0);
+		takeOrder(sm, alice, 0);
 
 		const busy = expectEvent(await send(sm, "!взять 2"), "busy");
 		expect(busy.type === "busy" && busy.operation).toBe("take");
@@ -189,13 +217,12 @@ describe("беседа: полный игровой цикл", () => {
 		const sm = setup();
 		const alice = "alice";
 		warmup(sm);
-		const res = sm.takeOrder(alice, 0);
-		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
+		const order = takeOrder(sm, alice, 0);
 
-		vi.advanceTimersByTime(res.order.timeLimit + 1);
-		expect(res.order.status).toBe(ORDER_STATUS.EXPIRED);
+		vi.advanceTimersByTime(order.timeLimit + 1);
+		expect(order.status).toBe(ORDER_STATUS.EXPIRED);
 		expect(sm.getXp(alice)).toBeLessThan(0);
-		expect(sm.getOrder(alice)).toBe(res.order);
+		expect(sm.getOrder(alice)).toBe(order);
 	});
 });
 
@@ -213,14 +240,14 @@ it("после serve новый заказ виден в !заказ и на exe
 	expectEvent(await send(sm, "!заказ", alice), "no_active_order");
 	expectEvent(await send(sm, "!next", alice), "no_active_order");
 
-	sm.incomingOrders.spawn();
+	warmup(sm);
 	expectEvent(await send(sm, "!взять 1", alice), "order_taken");
 
 	const activeOrder = sm.getActiveOrder(alice);
 	expect(activeOrder?.items.map((entry) => entry.item.id)).toEqual([cola.id]);
 	expectEvent(await send(sm, "!заказ", alice), "menu_state");
 
-	const execution = project(sm).execution;
+	const execution = projectSnapshot(sm.getSnapshot()).execution;
 	expect(execution).toHaveLength(1);
 	expect(execution[0].id).toBe(activeOrder?.id);
 	expect(execution[0].dishes).toEqual([{ name: cola.name, done: false }]);
@@ -269,7 +296,7 @@ describe("беседа: !взять", () => {
 	it("алиас !take работает", async () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
-		sm.incomingOrders.spawn();
+		warmup(sm);
 		const event = expectEvent(await send(sm, "!take 2"), "order_taken");
 		expect(event.type === "order_taken" && event.slot).toBe(2);
 	});
@@ -300,7 +327,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		);
 
 		warmup(sm);
-		sm.incomingOrders.spawn();
+		warmup(sm);
 		expectEvent(await send(sm, "!взять 2"), "order_taken");
 	});
 
@@ -312,7 +339,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 	it("!next на последнем блюде — last_item", async () => {
 		const sm = setup();
 		warmup(sm);
-		sm.takeOrder("alice", 0);
+		takeOrder(sm, "alice", 0);
 		await runMessage("!put сыр", "alice", sm, new ListSink());
 		expectEvent(await send(sm, "!next"), "last_item");
 	});
@@ -320,7 +347,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 	it("!next на пустом подносе — tray_empty", async () => {
 		const sm = setup(fixedBurgerColaOrder);
 		warmup(sm);
-		sm.takeOrder("alice", 0);
+		takeOrder(sm, "alice", 0);
 		const event = expectEvent(await send(sm, "!next"), "tray_empty");
 		expect(event.type === "tray_empty" && event.operation).toBe("next");
 	});
@@ -353,7 +380,7 @@ describe("беседа: алиасы !заказ/!order", () => {
 	it("работают как !menu", async () => {
 		const sm = setup();
 		warmup(sm);
-		sm.takeOrder("alice", 0);
+		takeOrder(sm, "alice", 0);
 		expectEvent(await send(sm, "!заказ"), "menu_state");
 		expectEvent(await send(sm, "!order"), "menu_state");
 	});

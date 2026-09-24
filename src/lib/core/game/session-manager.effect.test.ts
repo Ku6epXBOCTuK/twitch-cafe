@@ -17,7 +17,6 @@ function setup(orderId: string, items: readonly IMenuItem[] = [burger]) {
 		makeOrder({ id: orderId, items, timeLimit: orderTimeLimit }),
 	);
 	sessionManager.attachPort(port);
-	port.attach(sessionManager);
 	return { order, port, sessionManager };
 }
 
@@ -74,7 +73,8 @@ describe("SessionManager Effect lifecycle", () => {
 				yield* sessionManager.takeOrderEffect("alice", 0);
 				yield* TestClock.adjust(Duration.millis(orderTimeLimit + 1));
 				const xpAfterTimeout = sessionManager.getXp("alice");
-				sessionManager.onActionCompleted(serveEvent("alice", order.id, 1));
+				yield* Queue.offer(port.eventQueue, serveEvent("alice", order.id, 1));
+				yield* TestClock.adjust(Duration.millis(1));
 				return {
 					orderStatus: sessionManager.getOrder("alice")?.status,
 					xpAfterTimeout,
@@ -101,8 +101,12 @@ describe("SessionManager Effect lifecycle", () => {
 				port.trayLayers = [burger.id];
 				yield* sessionManager.serveEffect("alice");
 				const xpAfterServe = sessionManager.getXp("alice");
-				sessionManager.onActionCompleted(serveEvent("alice", "wrong-order", 2));
-				sessionManager.onActionCompleted(serveEvent("alice", order.id, 1));
+				yield* Queue.offer(
+					port.eventQueue,
+					serveEvent("alice", "wrong-order", 2),
+				);
+				yield* Queue.offer(port.eventQueue, serveEvent("alice", order.id, 1));
+				yield* TestClock.adjust(Duration.millis(1));
 				return {
 					orderStatus: sessionManager.getOrder("alice")?.status,
 					xpAfterServe,

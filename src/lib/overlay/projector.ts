@@ -1,5 +1,4 @@
 import type {
-	SessionManager,
 	SessionSnapshot,
 	SessionSnapshotPlayer,
 } from "../core/game/session-manager";
@@ -107,8 +106,4 @@ export function projectSnapshot(snapshot: SessionSnapshot): OverlaySnapshot {
 		players: projectPlayers(snapshot.sessions),
 		recipe: projectRecipe(snapshot.recipe),
 	};
-}
-
-export function project(sm: SessionManager): OverlaySnapshot {
-	return projectSnapshot(sm.getSnapshot());
 }

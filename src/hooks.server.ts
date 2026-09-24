@@ -5,7 +5,7 @@ import {
 	TWITCH_CLIENT_ID,
 	TWITCH_REACT_TO_SELF,
 } from "$app/env/private";
-import { getGame } from "#lib/core/game/bootstrap";
+import { getGameRuntime } from "#lib/core/game/bootstrap";
 import { missingBotEnvVars } from "#lib/twitch/bootstrap";
 import { startBotFromEnv } from "#lib/twitch/bootstrap";
 
@@ -28,7 +28,7 @@ function init(): void {
 		);
 		process.exit(1);
 	}
-	const { sessionManager } = getGame();
+	const { sessionManager } = getGameRuntime().core;
 	startBotFromEnv(sessionManager, env);
 }
 

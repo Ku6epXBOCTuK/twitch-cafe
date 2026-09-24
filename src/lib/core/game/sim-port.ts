@@ -2,10 +2,7 @@ import { Data, Effect, Queue } from "effect";
 import type { IOrder } from "../types/order";
 import type { ITraySnapshot } from "../types/tray";
 import type {
-	ActionCompletedEvent,
-	ActionStartedEvent,
 	CancelReason,
-	CharacterRemovedEvent,
 	SimOutEvent,
 	SimSnapshot,
 	TaskIntent,
@@ -43,10 +40,4 @@ export interface ISimPort {
 	despawn(username: string): Effect.Effect<void, SimQueueClosedError>;
 	getTraySnapshot(username: string): ITraySnapshot | undefined;
 	getSnapshot(): SimSnapshot;
-}
-
-export interface ISimEvents {
-	onActionStarted(e: ActionStartedEvent): void;
-	onActionCompleted(e: ActionCompletedEvent): void;
-	onCharacterRemoved(e: CharacterRemovedEvent): void;
 }

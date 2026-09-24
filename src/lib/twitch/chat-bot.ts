@@ -1,6 +1,6 @@
 import { StaticAuthProvider } from "@twurple/auth";
 import { ChatClient } from "@twurple/chat";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import type { SessionManager } from "../core/game/session-manager";
 import { processMessage } from "./chat-commands";
 import { createCommandId } from "./command-context";
@@ -46,11 +46,13 @@ export function startChatBot(
 			new ChatSink(client, channel),
 			correlationId,
 		);
-		void Effect.runPromise(command).catch((error) => {
-			console.error(
-				`[chat] ${user} (${correlationId}): обработка сломалась:`,
-				error,
-			);
+		void Effect.runPromiseExit(command).then((exit) => {
+			if (Exit.isFailure(exit)) {
+				console.error(
+					`[chat] ${user} (${correlationId}): обработка сломалась:`,
+					exit.cause,
+				);
+			}
 		});
 	});
 

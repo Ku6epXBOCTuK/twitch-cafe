@@ -6,14 +6,14 @@ import type { GameEventPayload } from "../core/game/game-event";
 import {
 	NEXT_DISH_REASON,
 	TAKE_ORDER_REASON,
+	type NextDishReason,
+	type TakeOrderReason,
 } from "../core/game/failure-reasons";
 import type {
 	BusyError,
-	NextDishResult,
 	SessionManager,
 	ServeCancelledError,
 	ServeExpiredError,
-	TakeOrderResult,
 	TaskRefusedError,
 } from "../core/game/session-manager";
 import { EmptySlotError } from "../core/game/incoming-orders";
@@ -83,7 +83,7 @@ function emitTaskFailure(
 	emitRefusal(error.reason);
 }
 
-type TakeFailureReason = Extract<TakeOrderResult, { ok: false }>["reason"];
+type TakeFailureReason = TakeOrderReason;
 
 function emitTakeFailure(
 	sink: CommandSink,
@@ -113,7 +113,7 @@ function emitTakeFailure(
 	emitReason(reason);
 }
 
-type NextFailureReason = Extract<NextDishResult, { ok: false }>["reason"];
+type NextFailureReason = NextDishReason;
 
 function emitNextFailure(
 	sink: CommandSink,
@@ -351,7 +351,10 @@ export function processMessage(
 					return;
 				}
 				const entry = command.item;
-				if (!entry) {
+				const item = entry
+					? MENU_ITEMS.find((menuItem) => menuItem.id === entry.id)
+					: undefined;
+				if (!item) {
 					emitEvent(sink, correlationId, {
 						type: GAME_EVENT_TYPE.RECIPE_UNKNOWN,
 						username,
@@ -359,14 +362,11 @@ export function processMessage(
 					});
 					return;
 				}
-				const item =
-					MENU_ITEMS.find((menuItem) => menuItem.id === entry.id) ?? null;
-				const shown = sm.recipeBook.show(item);
-				if (!shown.ok) throw new Error("recipe item resolution failed");
+				sm.recipeBook.show(item);
 				emitEvent(sink, correlationId, {
 					type: GAME_EVENT_TYPE.RECIPE_SHOWN,
 					username,
-					item: shown.item,
+					item,
 				});
 			}),
 		),

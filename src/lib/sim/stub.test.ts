@@ -1,4 +1,5 @@
-import { Effect, Fiber, Queue, Result } from "effect";
+import { Duration, Effect, Fiber, Layer, Queue, Result, Scope } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { INGREDIENTS } from "../core/data/menu";
 import {
@@ -10,6 +11,7 @@ import {
 import { CANCEL_REASON } from "../core/game/sim-dto";
 import { makeSimEventQueue } from "../core/game/sim-port";
 import { SessionManager } from "../core/game/session-manager";
+import { DEFAULT_GAME_CONFIG, GameConfig } from "../core/game/game-config";
 import { connectSim } from "./sync";
 import { StubSim } from "./stub";
 
@@ -32,6 +34,23 @@ function taskResult(
 
 function takeEvent(eventQueue: ReturnType<typeof makeSimEventQueue>) {
 	return Effect.runSync(Queue.take(eventQueue));
+}
+
+async function run<A, E>(
+	sm: SessionManager,
+	program: Effect.Effect<A, E, TestClock.TestClock | Scope.Scope>,
+): Promise<A> {
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.provide(
+				program.pipe(Effect.ensuring(sm.stopEffect())),
+				Layer.mergeAll(
+					TestClock.layer(),
+					Layer.succeed(GameConfig, DEFAULT_GAME_CONFIG),
+				),
+			),
+		),
+	);
 }
 
 describe("StubSim: enqueueTask", () => {
@@ -229,31 +248,46 @@ describe("sync: связка порт ↔ SessionManager", () => {
 	const fixedBurgerOrder = () =>
 		makeTestOrder({ id: "o-fixed", items: [burger] });
 
-	it("connectSim соединяет слои: у игрока появляется персонаж с подносом", () => {
+	it("connectSim соединяет слои: у игрока появляется персонаж с подносом", async () => {
 		const sm = new SessionManager();
 		const port = connectSim(sm);
 
-		sm.incomingOrders.spawn();
-		const res = sm.takeOrder("alice", 0);
-		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
-		expect(port.getTraySnapshot("alice")?.layers).toEqual([]);
+		await run(
+			sm,
+			Effect.gen(function* () {
+				yield* sm.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(DEFAULT_GAME_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sm.takeOrderEffect("alice", 0);
+				expect(port.getTraySnapshot("alice")?.layers).toEqual([]);
+			}),
+		);
 	});
 
-	it("полный цикл через порт: put ×4 → serve → XP и вердикт", () => {
+	it("полный цикл через порт: put ×4 → serve → XP и вердикт", async () => {
 		const sm = new SessionManager(fixedBurgerOrder);
 		const port = connectSim(sm);
-		sm.incomingOrders.spawn();
-		const res = sm.takeOrder("alice", 0);
-		if (!res.ok) throw new Error(`takeOrder failed: ${res.reason}`);
 
-		for (const id of BURGER_IDS) {
-			expect(sm.putIngredient("alice", id)).toEqual({ ok: true });
-		}
-		expect(port.getTraySnapshot("alice")?.layers).toEqual(BURGER_IDS);
+		await run(
+			sm,
+			Effect.gen(function* () {
+				yield* sm.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(DEFAULT_GAME_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sm.takeOrderEffect("alice", 0);
 
-		expect(sm.serve("alice")).toEqual({ ok: true });
-		const result = sm.getLastResult("alice");
-		expect(result).not.toBeNull();
-		expect(sm.getXp("alice")).toBe(result?.xpDelta);
+				for (const id of BURGER_IDS) {
+					yield* sm.putIngredientEffect("alice", id);
+				}
+				expect(port.getTraySnapshot("alice")?.layers).toEqual(BURGER_IDS);
+
+				yield* sm.serveEffect("alice");
+				const result = sm.getLastResult("alice");
+				expect(result).not.toBeNull();
+				expect(sm.getXp("alice")).toBe(result?.xpDelta);
+			}),
+		);
 	});
 });

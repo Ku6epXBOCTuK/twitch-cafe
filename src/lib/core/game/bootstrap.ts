@@ -1,9 +1,5 @@
 import { Effect } from "effect";
-import {
-	makeGameRuntime,
-	type GameCore,
-	type GameRuntime,
-} from "./game-runtime";
+import { makeGameRuntime, type GameRuntime } from "./game-runtime";
 
 let runtime: GameRuntime | null = null;
 
@@ -13,10 +9,6 @@ export function getGameRuntime(): GameRuntime {
 	Effect.runSync(created.start);
 	runtime = created;
 	return created;
-}
-
-export function getGame(): GameCore {
-	return getGameRuntime().core;
 }
 
 export function shutdownGame(): void {
