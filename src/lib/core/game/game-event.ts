@@ -47,7 +47,7 @@ export const TRAY_EMPTY_OPERATION = {
 export type TrayEmptyOperation =
 	(typeof TRAY_EMPTY_OPERATION)[keyof typeof TRAY_EMPTY_OPERATION];
 
-export type GameEvent =
+export type GameEventPayload =
 	| { type: typeof GAME_EVENT_TYPE.NOT_IN_GAME; username: string }
 	| { type: typeof GAME_EVENT_TYPE.NO_ACTIVE_ORDER; username: string }
 	| {
@@ -120,3 +120,9 @@ export type GameEvent =
 			order: IOrder;
 			xpDelta: number;
 	  };
+
+export interface GameEventMetadata {
+	readonly correlationId: string;
+}
+
+export type GameEvent = GameEventPayload & GameEventMetadata;

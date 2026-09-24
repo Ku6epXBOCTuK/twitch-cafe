@@ -15,7 +15,7 @@ export class ChatSink implements CommandSink {
 	emit(event: GameEvent): void {
 		void this.client.say(this.channel, renderEvent(event)).catch((err) => {
 			console.error(
-				`[chat] не удалось отправить ответ в ${this.channel}:`,
+				`[chat] не удалось отправить ответ в ${this.channel} (${event.correlationId}):`,
 				err,
 			);
 		});

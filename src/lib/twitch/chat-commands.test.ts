@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../core/config";
 import { INGREDIENTS } from "../core/data/menu";
@@ -29,9 +30,18 @@ function warmup(_sm: SessionManager): void {
 	vi.advanceTimersByTime(ORDER_CONFIG.SPAWN_INTERVAL_MS);
 }
 
+function runMessage(
+	raw: string,
+	username: string,
+	sm: SessionManager,
+	sink: ListSink,
+): void {
+	Effect.runSync(processMessage(raw, username, sm, sink));
+}
+
 function send(sm: SessionManager, raw: string, username = "alice"): ListSink {
 	const sink = new ListSink();
-	processMessage(raw, username, sm, sink);
+	runMessage(raw, username, sm, sink);
 	return sink;
 }
 
@@ -39,6 +49,7 @@ function expectEvent(sink: ListSink, type: GameEvent["type"]): GameEvent {
 	expect(sink.events).toHaveLength(1);
 	const event = sink.events[0];
 	expect(event?.type).toBe(type);
+	expect(event?.correlationId).toMatch(/^command-\d+$/);
 	if (!event) throw new Error("Expected a game event");
 	return event;
 }
@@ -68,13 +79,13 @@ describe("беседа: полный игровой цикл", () => {
 		expect(empty.type === "tray_empty" && empty.operation).toBe("serve");
 		expect(sm.getXp(alice)).toBe(xpBeforeServe);
 
-		processMessage("!put нижняя булочка", alice, sm, new ListSink());
+		runMessage("!put нижняя булочка", alice, sm, new ListSink());
 		const ingredient = expectEvent(send(sm, "!put сыр"), "ingredient_added");
 		expect(
 			ingredient.type === "ingredient_added" && ingredient.ingredientId,
 		).toBe(INGREDIENTS.cheese.id);
-		processMessage("!put котлета", alice, sm, new ListSink());
-		processMessage("!put верхняя булочка", alice, sm, new ListSink());
+		runMessage("!put котлета", alice, sm, new ListSink());
+		runMessage("!put верхняя булочка", alice, sm, new ListSink());
 
 		const served = expectEvent(send(sm, "!serve"), "order_served");
 		expect(served.type === "order_served" && served.order.id).toBe(
@@ -95,7 +106,7 @@ describe("беседа: полный игровой цикл", () => {
 		sm.takeOrder(alice, 0);
 
 		for (const id of BURGER_IDS) {
-			processMessage(`!put ${id}`, alice, sm, new ListSink());
+			runMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
 		const served = expectEvent(send(sm, "!serve"), "order_served");
 		expect(served.type === "order_served" && served.order.status).toBe(
@@ -117,7 +128,7 @@ describe("беседа: полный игровой цикл", () => {
 		warmup(sm);
 		sm.takeOrder("alice", 0);
 
-		processMessage("!put сыр", "alice", sm, new ListSink());
+		runMessage("!put сыр", "alice", sm, new ListSink());
 		expectEvent(send(sm, "!bin"), "tray_cleared");
 		expect(sm.getTraySnapshot("alice")?.layers).toEqual([]);
 		expectEvent(send(sm, "!menu"), "menu_state");
@@ -143,6 +154,18 @@ describe("беседа: полный игровой цикл", () => {
 		expectEvent(send(sm, "!взять 3", "bob"), "empty_slot");
 		expectEvent(send(sm, "!put сыр", "bob"), "not_in_game");
 		expectEvent(send(sm, "!serve", "bob"), "not_in_game");
+	});
+
+	it("не скрывает defect: ошибка команды не превращается в GameEvent", () => {
+		const sm = setup();
+		vi.spyOn(sm, "serveEffect").mockReturnValue(Effect.die(new Error("boom")));
+		const sink = new ListSink();
+		const exit = Effect.runSyncExit(
+			processMessage("!serve", "alice", sm, sink),
+		);
+
+		expect(exit._tag).toBe("Failure");
+		expect(sink.events).toEqual([]);
 	});
 
 	it("не-команда игнорируется: sink нетронут", () => {
@@ -174,7 +197,7 @@ it("после serve новый заказ виден в !заказ и на exe
 
 	expectEvent(send(sm, "!взять 1", alice), "order_taken");
 	for (const id of BURGER_IDS) {
-		processMessage(`!put ${id}`, alice, sm, new ListSink());
+		runMessage(`!put ${id}`, alice, sm, new ListSink());
 	}
 	expectEvent(send(sm, "!serve", alice), "order_served");
 	expectEvent(send(sm, "!заказ", alice), "no_active_order");
@@ -204,6 +227,16 @@ describe("беседа: !взять", () => {
 			event.type === "order_taken" &&
 				event.order.items.map((entry) => entry.item.id),
 		).toEqual([burger.id, cola.id]);
+	});
+
+	it("!взять сохраняет timeout после завершения Effect", () => {
+		const sm = setup();
+		warmup(sm);
+		const event = expectEvent(send(sm, "!взять 1"), "order_taken");
+		if (event.type !== "order_taken") throw new Error("Expected order_taken");
+
+		vi.advanceTimersByTime(event.order.timeLimit + 1);
+		expect(sm.getOrder("alice")?.status).toBe(ORDER_STATUS.EXPIRED);
 	});
 
 	it("!взять без номера — slot_required", () => {
@@ -240,7 +273,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 
 		expectEvent(send(sm, "!взять 1"), "order_taken");
 		for (const id of BURGER_IDS) {
-			processMessage(`!put ${id}`, alice, sm, new ListSink());
+			runMessage(`!put ${id}`, alice, sm, new ListSink());
 		}
 
 		const sealed = expectEvent(send(sm, "!next"), "dish_sealed");
@@ -250,7 +283,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		expect(sealed.type === "dish_sealed" && sealed.nextItemIndex).toBe(1);
 		expect(sm.getTraySnapshot(alice)?.layers).toEqual([]);
 
-		processMessage("!put кола", alice, sm, new ListSink());
+		runMessage("!put кола", alice, sm, new ListSink());
 		const served = expectEvent(send(sm, "!serve"), "order_served");
 		expect(sm.getXp(alice)).toBe(
 			served.type === "order_served" ? served.assessment.xpDelta : undefined,
@@ -270,7 +303,7 @@ describe("беседа: полный цикл с !next (два блюда)", () 
 		const sm = setup();
 		warmup(sm);
 		sm.takeOrder("alice", 0);
-		processMessage("!put сыр", "alice", sm, new ListSink());
+		runMessage("!put сыр", "alice", sm, new ListSink());
 		expectEvent(send(sm, "!next"), "last_item");
 	});
 

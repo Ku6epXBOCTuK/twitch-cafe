@@ -74,7 +74,7 @@ export interface PlayerSession {
 	lastSequence: number;
 }
 
-type SessionEffect<A, E> = Effect.Effect<A, E, Scope.Scope>;
+type SessionEffect<A, E> = Effect.Effect<A, E>;
 type TakeOrderEffect = SessionEffect<IOrder, BusyError | EmptySlotError>;
 type NextDishEffect = SessionEffect<
 	void,
@@ -87,7 +87,6 @@ export class SessionManager implements ISimEvents {
 	private readonly operationSemaphore = Semaphore.makeUnsafe(1);
 	private port: ISimPort | null = null;
 	private sessionScope: Scope.Closeable | null = null;
-	private legacyScope: Scope.Closeable | null = null;
 	private running = false;
 	private simEventDepth = 0;
 	readonly incomingOrders: IncomingOrders;
@@ -108,9 +107,6 @@ export class SessionManager implements ISimEvents {
 
 	stop(): void {
 		Effect.runSync(this.stopEffect());
-		const scope = this.legacyScope;
-		this.legacyScope = null;
-		if (scope) Effect.runSync(Scope.close(scope, Exit.void));
 	}
 
 	isRunning(): boolean {
@@ -121,7 +117,7 @@ export class SessionManager implements ISimEvents {
 		return Effect.gen(
 			function* (this: SessionManager) {
 				if (this.running) return;
-				const scope = yield* this.ensureSessionScope();
+				const scope = this.ensureSessionScope();
 				yield* Scope.provide(scope)(this.incomingOrders.startEffect());
 				this.running = true;
 			}.bind(this),
@@ -189,7 +185,7 @@ export class SessionManager implements ISimEvents {
 					}
 
 					const order = yield* this.incomingOrders.takeOrderEffect(slotIndex);
-					const scope = yield* this.ensureSessionScope();
+					const scope = this.ensureSessionScope();
 					const previousFiber = existing?.timeoutFiber ?? null;
 					if (previousFiber) yield* Fiber.interrupt(previousFiber);
 
@@ -483,52 +479,21 @@ export class SessionManager implements ISimEvents {
 		return this.operationSemaphore.withPermit(effect);
 	}
 
-	private ensureSessionScope(): Effect.Effect<
-		Scope.Closeable,
-		never,
-		Scope.Scope
-	> {
+	private ensureSessionScope(): Scope.Closeable {
 		if (this.sessionScope && this.sessionScope.state._tag !== "Closed") {
-			return Effect.succeed(this.sessionScope);
+			return this.sessionScope;
 		}
-		return Effect.gen(
-			function* (this: SessionManager) {
-				const parent = yield* Scope.Scope;
-				const scope = yield* Scope.fork(parent);
-				this.sessionScope = scope;
-				yield* Scope.addFinalizer(
-					scope,
-					Effect.sync(() => {
-						for (const session of this.sessions.values()) {
-							session.timeoutFiber = null;
-						}
-						if (this.sessionScope === scope) {
-							this.sessionScope = null;
-							this.running = false;
-						}
-					}),
-				);
-				return scope;
-			}.bind(this),
-		);
+		this.sessionScope = Scope.makeUnsafe("sequential");
+		return this.sessionScope;
 	}
 
 	private provideLegacy<A, E>(
-		effect: Effect.Effect<A, E, Scope.Scope>,
-	): Effect.Effect<A, E, never> {
-		const scope = this.ensureLegacyScope();
-		return Scope.provide(scope)(
-			Effect.provideService(
-				Effect.provideService(effect, GameConfig, this.config),
-				Clock.Clock,
-				Clock.Clock.defaultValue(),
-			),
+		effect: Effect.Effect<A, E>,
+	): Effect.Effect<A, E> {
+		return Effect.provideService(
+			Effect.provideService(effect, GameConfig, this.config),
+			Clock.Clock,
+			Clock.Clock.defaultValue(),
 		);
-	}
-
-	private ensureLegacyScope(): Scope.Closeable {
-		if (this.legacyScope) return this.legacyScope;
-		this.legacyScope = Scope.makeUnsafe("sequential");
-		return this.legacyScope;
 	}
 }
