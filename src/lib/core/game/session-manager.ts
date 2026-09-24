@@ -1,7 +1,7 @@
 import type { IOrder } from "../types/order";
 import { ORDER_ITEM_STATE, ORDER_STATUS } from "../types/order";
 import type { ISimEvents, ISimPort } from "./sim-port";
-import type { TaskAck } from "./sim-dto";
+import { ACTION_KIND, type TaskAck } from "./sim-dto";
 import type { ActionCompletedEvent, CharacterRemovedEvent } from "./sim-dto";
 import type { ITraySnapshot } from "../types/tray";
 import type { AssessmentResult } from "../services/order-validator";
@@ -119,7 +119,10 @@ export class SessionManager implements ISimEvents {
 
 	putIngredient(username: string, ingredientId: string): TaskAck {
 		return (
-			this.port?.enqueueTask(username, { kind: "put", ingredientId }) ?? {
+			this.port?.enqueueTask(username, {
+				kind: ACTION_KIND.PUT,
+				ingredientId,
+			}) ?? {
 				ok: false,
 				reason: "no_character",
 			}
@@ -128,7 +131,7 @@ export class SessionManager implements ISimEvents {
 
 	serve(username: string): TaskAck {
 		return (
-			this.port?.enqueueTask(username, { kind: "serve" }) ?? {
+			this.port?.enqueueTask(username, { kind: ACTION_KIND.SERVE }) ?? {
 				ok: false,
 				reason: "no_character",
 			}
@@ -137,7 +140,7 @@ export class SessionManager implements ISimEvents {
 
 	bin(username: string): TaskAck {
 		return (
-			this.port?.enqueueTask(username, { kind: "bin" }) ?? {
+			this.port?.enqueueTask(username, { kind: ACTION_KIND.BIN }) ?? {
 				ok: false,
 				reason: "no_character",
 			}

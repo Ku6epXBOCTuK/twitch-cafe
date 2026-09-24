@@ -2,7 +2,12 @@ import type { IOrder } from "../core/types/order";
 import type { ITraySnapshot } from "../core/types/tray";
 import type { ISimPort } from "../core/game/sim-port";
 import type { ISimEvents } from "../core/game/sim-port";
-import type { SimSnapshot, TaskAck, TaskIntent } from "../core/game/sim-dto";
+import {
+	ACTION_KIND,
+	type SimSnapshot,
+	type TaskAck,
+	type TaskIntent,
+} from "../core/game/sim-dto";
 
 interface StubPlayer {
 	username: string;
@@ -53,7 +58,7 @@ export class StubSim implements ISimPort {
 			action: { kind: intent.kind, targetId: 0, startedAt: player.startedAt },
 		};
 
-		if (intent.kind === "put") {
+		if (intent.kind === ACTION_KIND.PUT) {
 			if (!this.options.allowedIngredientIds.has(intent.ingredientId)) {
 				return { ok: false, reason: "unknown_ingredient" };
 			}
@@ -65,7 +70,7 @@ export class StubSim implements ISimPort {
 			return { ok: true };
 		}
 
-		if (intent.kind === "bin") {
+		if (intent.kind === ACTION_KIND.BIN) {
 			player.layers.length = 0;
 			this.events.onActionCompleted(base);
 			return { ok: true };

@@ -1,8 +1,14 @@
 import { Match } from "effect";
 import type { IOrder, IOrderItem } from "../core/types/order";
 import type { IMenuItem, IMenuItemComposite } from "../core/types/menu_item";
-import type { GameEvent } from "../core/game/game-event";
-import type { TaskAck } from "../core/game/sim-dto";
+import {
+	BUSY_OPERATION,
+	GAME_EVENT_TYPE,
+	TRAY_EMPTY_OPERATION,
+	type BusyOperation,
+	type GameEvent,
+	type TrayEmptyOperation,
+} from "../core/game/game-event";
 import type { AssessmentResult } from "../core/services/order-validator";
 import { nameForId } from "./ingredients";
 
@@ -48,34 +54,6 @@ export function replyUnknownIngredient(
 
 export function replyBusy(username: string): string {
 	return `${username}, персонаж ещё идёт — подожди.`;
-}
-
-export function replyPutAck(
-	username: string,
-	ack: TaskAck,
-	ingredientId: string,
-): string {
-	if (ack.ok)
-		return `${username} положил: ${nameForId(ingredientId) ?? ingredientId}.`;
-	if (ack.reason === "no_character") return replyNotInGame(username);
-	if (ack.reason === "busy") return replyBusy(username);
-	return replyUnknownIngredient(username, ingredientId);
-}
-
-export function replyServeAck(
-	username: string,
-	ack: Extract<TaskAck, { ok: false }>,
-): string {
-	if (ack.reason === "tray_empty")
-		return `${username}, поднос пуст — сначала !put ингредиенты.`;
-	if (ack.reason === "no_character") return replyNotInGame(username);
-	return replyBusy(username);
-}
-
-export function replyBinAck(username: string, ack: TaskAck): string {
-	if (ack.ok) return `${username} сбросил поднос в мусорку.`;
-	if (ack.reason === "no_character") return replyNotInGame(username);
-	return replyBusy(username);
 }
 
 export function replyResult(
@@ -156,61 +134,88 @@ export function replyNextTrayEmpty(username: string): string {
 	return `${username}, поднос пуст — нечего запечатывать.`;
 }
 
+function renderBusy(username: string, operation: BusyOperation): string {
+	return Match.type<BusyOperation>().pipe(
+		Match.when(BUSY_OPERATION.TAKE, () => replyTakeBusy(username)),
+		Match.when(BUSY_OPERATION.PUT, () => replyBusy(username)),
+		Match.when(BUSY_OPERATION.SERVE, () => replyBusy(username)),
+		Match.when(BUSY_OPERATION.BIN, () => replyBusy(username)),
+		Match.exhaustive,
+	)(operation);
+}
+
+function renderTrayEmpty(
+	username: string,
+	operation: TrayEmptyOperation,
+): string {
+	return Match.type<TrayEmptyOperation>().pipe(
+		Match.when(
+			TRAY_EMPTY_OPERATION.SERVE,
+			() => `${username}, поднос пуст — сначала !put ингредиенты.`,
+		),
+		Match.when(TRAY_EMPTY_OPERATION.NEXT, () => replyNextTrayEmpty(username)),
+		Match.when(TRAY_EMPTY_OPERATION.PUT, () => `${username}, поднос пуст.`),
+		Match.when(TRAY_EMPTY_OPERATION.BIN, () => `${username}, поднос пуст.`),
+		Match.exhaustive,
+	)(operation);
+}
+
 const renderGameEvent = Match.type<GameEvent>().pipe(
-	Match.when({ type: "not_in_game" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.NOT_IN_GAME }, (event) =>
 		replyNotInGame(event.username),
 	),
-	Match.when({ type: "no_active_order" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.NO_ACTIVE_ORDER }, (event) =>
 		replyNoActiveOrder(event.username),
 	),
-	Match.when({ type: "busy" }, (event) =>
-		event.operation === "take"
-			? replyTakeBusy(event.username)
-			: replyBusy(event.username),
+	Match.when({ type: GAME_EVENT_TYPE.BUSY }, (event) =>
+		renderBusy(event.username, event.operation),
 	),
-	Match.when({ type: "unknown_ingredient" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.UNKNOWN_INGREDIENT }, (event) =>
 		replyUnknownIngredient(event.username, event.token),
 	),
-	Match.when({ type: "ingredient_added" }, (event) =>
-		replyPutAck(event.username, { ok: true }, event.ingredientId),
+	Match.when(
+		{ type: GAME_EVENT_TYPE.INGREDIENT_ADDED },
+		(event) =>
+			`${event.username} положил: ${nameForId(event.ingredientId) ?? event.ingredientId}.`,
 	),
-	Match.when({ type: "tray_empty" }, (event) =>
-		event.operation === "serve"
-			? replyServeAck(event.username, { ok: false, reason: "tray_empty" })
-			: replyNextTrayEmpty(event.username),
+	Match.when({ type: GAME_EVENT_TYPE.TRAY_EMPTY }, (event) =>
+		renderTrayEmpty(event.username, event.operation),
 	),
-	Match.when({ type: "order_taken" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.ORDER_TAKEN }, (event) =>
 		replyTakeOk(event.username, event.order, event.slot),
 	),
-	Match.when({ type: "empty_slot" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.EMPTY_SLOT }, (event) =>
 		replyTakeEmptySlot(event.username),
 	),
-	Match.when({ type: "slot_required" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.SLOT_REQUIRED }, (event) =>
 		replyTakeNoSlot(event.username),
 	),
-	Match.when({ type: "menu_state" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.MENU_STATE }, (event) =>
 		replyMenu(event.username, event.order, [...event.trayLayers]),
 	),
-	Match.when({ type: "dish_sealed" }, (event) => replyNextAck(event.username)),
-	Match.when({ type: "last_item" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.DISH_SEALED }, (event) =>
+		replyNextAck(event.username),
+	),
+	Match.when({ type: GAME_EVENT_TYPE.LAST_ITEM }, (event) =>
 		replyNextLastItem(event.username),
 	),
-	Match.when({ type: "order_served" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.ORDER_SERVED }, (event) =>
 		replyResult(event.username, event.assessment),
 	),
-	Match.when({ type: "tray_cleared" }, (event) =>
-		replyBinAck(event.username, { ok: true }),
+	Match.when(
+		{ type: GAME_EVENT_TYPE.TRAY_CLEARED },
+		(event) => `${event.username} сбросил поднос в мусорку.`,
 	),
-	Match.when({ type: "recipe_arg_required" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.RECIPE_ARG_REQUIRED }, (event) =>
 		replyRecipeNoArg(event.username),
 	),
-	Match.when({ type: "recipe_shown" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.RECIPE_SHOWN }, (event) =>
 		replyRecipeOk(event.username, event.item),
 	),
-	Match.when({ type: "recipe_unknown" }, (event) =>
+	Match.when({ type: GAME_EVENT_TYPE.RECIPE_UNKNOWN }, (event) =>
 		replyRecipeUnknown(event.username, event.token),
 	),
-	Match.when({ type: "order_expired" }, (event) => {
+	Match.when({ type: GAME_EVENT_TYPE.ORDER_EXPIRED }, (event) => {
 		const xp =
 			event.xpDelta >= 0 ? `+${event.xpDelta} XP` : `${event.xpDelta} XP`;
 		return `${event.username}: заказ истёк. ${xp}.`;

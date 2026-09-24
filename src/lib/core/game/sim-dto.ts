@@ -3,20 +3,37 @@ import type { ITraySnapshot } from "../types/tray";
 export type EntityId = number;
 export type IngredientId = string;
 
-export type ActionKind = "put" | "serve" | "bin";
+export const ACTION_KIND = {
+	PUT: "put",
+	SERVE: "serve",
+	BIN: "bin",
+} as const;
+
+export type ActionKind = (typeof ACTION_KIND)[keyof typeof ACTION_KIND];
+
+export const OPERATION = {
+	PUT: ACTION_KIND.PUT,
+	SERVE: ACTION_KIND.SERVE,
+	BIN: ACTION_KIND.BIN,
+	TAKE: "take",
+	NEXT: "next",
+} as const;
+
+export type Operation = (typeof OPERATION)[keyof typeof OPERATION];
 
 export type TaskIntent =
-	| { kind: "put"; ingredientId: IngredientId }
-	| { kind: "serve" }
-	| { kind: "bin" };
+	| { kind: typeof ACTION_KIND.PUT; ingredientId: IngredientId }
+	| { kind: typeof ACTION_KIND.SERVE }
+	| { kind: typeof ACTION_KIND.BIN };
 
-export type TaskRefusal =
-	| "no_character" // зритель не в игре
-	| "busy" // персонаж уже что-то делает — «персонаж ещё идёт»
-	| "unknown_ingredient" // нет полки с таким ингредиентом
-	| "tray_empty"; // !serve с пустым подносом
-// busy — часть контракта асинхронной модели. Заглушка его не возвращает
-// (действие мгновенно), реальная SIM вернёт, когда персонаж занят.
+export const TASK_REFUSAL = {
+	NO_CHARACTER: "no_character",
+	BUSY: "busy",
+	UNKNOWN_INGREDIENT: "unknown_ingredient",
+	TRAY_EMPTY: "tray_empty",
+} as const;
+
+export type TaskRefusal = (typeof TASK_REFUSAL)[keyof typeof TASK_REFUSAL];
 
 export type TaskAck = { ok: true } | { ok: false; reason: TaskRefusal };
 

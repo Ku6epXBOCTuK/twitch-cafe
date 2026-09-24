@@ -1,6 +1,10 @@
 import type { IOrder } from "../core/types/order";
 import type { ITraySnapshot } from "../core/types/tray";
-import type { TaskAck, TaskIntent } from "../core/game/sim-dto";
+import {
+	ACTION_KIND,
+	type TaskAck,
+	type TaskIntent,
+} from "../core/game/sim-dto";
 import type { ISimEvents, ISimPort } from "../core/game/sim-port";
 import type { SimSnapshot } from "../core/game/sim-dto";
 
@@ -22,12 +26,12 @@ export class RecordingPort implements ISimPort {
 
 	enqueueTask(username: string, intent: TaskIntent): TaskAck {
 		this.tasks.push({ username, intent });
-		if (intent.kind === "serve") {
+		if (intent.kind === ACTION_KIND.SERVE) {
 			this.events?.onActionCompleted({
 				type: "ACTION_COMPLETED",
 				username,
 				finishedAt: Date.now(),
-				action: { kind: "serve", targetId: 0, startedAt: 0 },
+				action: { kind: ACTION_KIND.SERVE, targetId: 0, startedAt: 0 },
 				tray: {
 					username,
 					layers: [...this.trayLayers],
@@ -36,8 +40,9 @@ export class RecordingPort implements ISimPort {
 			});
 			return { ok: true };
 		}
-		if (intent.kind === "bin") this.trayLayers = [];
-		if (intent.kind === "put") this.trayLayers.push(intent.ingredientId);
+		if (intent.kind === ACTION_KIND.BIN) this.trayLayers = [];
+		if (intent.kind === ACTION_KIND.PUT)
+			this.trayLayers.push(intent.ingredientId);
 		return { ok: true };
 	}
 

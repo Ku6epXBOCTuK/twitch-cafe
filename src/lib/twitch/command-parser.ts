@@ -3,23 +3,43 @@ import { resolveIngredient } from "./ingredients";
 import type { MenuItemEntry } from "./menu-items";
 import { resolveMenuItem } from "./menu-items";
 
+export const COMMAND_KIND = {
+	PUT: "put",
+	SERVE: "serve",
+	BIN: "bin",
+	MENU: "menu",
+	TAKE: "take",
+	RECIPE: "recipe",
+	NEXT: "next",
+} as const;
+
+export type CommandKind = (typeof COMMAND_KIND)[keyof typeof COMMAND_KIND];
+
 export type ParsedCommand =
-	| { kind: "put"; ingredient: IngredientEntry | null; token: string }
-	| { kind: "serve" }
-	| { kind: "bin" }
-	| { kind: "menu" }
-	| { kind: "take"; slot: number | null; token: string }
-	| { kind: "recipe"; item: MenuItemEntry | null; token: string }
-	| { kind: "next" };
+	| {
+			kind: typeof COMMAND_KIND.PUT;
+			ingredient: IngredientEntry | null;
+			token: string;
+	  }
+	| { kind: typeof COMMAND_KIND.SERVE }
+	| { kind: typeof COMMAND_KIND.BIN }
+	| { kind: typeof COMMAND_KIND.MENU }
+	| { kind: typeof COMMAND_KIND.TAKE; slot: number | null; token: string }
+	| {
+			kind: typeof COMMAND_KIND.RECIPE;
+			item: MenuItemEntry | null;
+			token: string;
+	  }
+	| { kind: typeof COMMAND_KIND.NEXT };
 
 const COMMANDS = {
-	serve: ["!serve", "!submit", "!отдать"],
-	bin: ["!bin", "!мусор"],
-	menu: ["!menu", "!заказ", "!order"],
-	put: ["!put", "!add", "!положи"],
-	take: ["!взять", "!take"],
-	recipe: ["!рецепт", "!recipe"],
-	next: ["!next", "!дальше"],
+	[COMMAND_KIND.SERVE]: ["!serve", "!submit", "!отдать"],
+	[COMMAND_KIND.BIN]: ["!bin", "!мусор"],
+	[COMMAND_KIND.MENU]: ["!menu", "!заказ", "!order"],
+	[COMMAND_KIND.PUT]: ["!put", "!add", "!положи"],
+	[COMMAND_KIND.TAKE]: ["!взять", "!take"],
+	[COMMAND_KIND.RECIPE]: ["!рецепт", "!recipe"],
+	[COMMAND_KIND.NEXT]: ["!next", "!дальше"],
 } as const;
 
 export class CommandParser {
@@ -28,26 +48,41 @@ export class CommandParser {
 		if (!head) return null;
 		const command = head.toLowerCase();
 
-		for (const kind of ["serve", "bin", "menu", "next"] as const) {
+		for (const kind of [
+			COMMAND_KIND.SERVE,
+			COMMAND_KIND.BIN,
+			COMMAND_KIND.MENU,
+			COMMAND_KIND.NEXT,
+		] as const) {
 			if ((COMMANDS[kind] as readonly string[]).includes(command)) {
 				return { kind };
 			}
 		}
 
-		if ((COMMANDS.put as readonly string[]).includes(command)) {
+		if ((COMMANDS[COMMAND_KIND.PUT] as readonly string[]).includes(command)) {
 			const token = rest.join(" ");
-			return { kind: "put", ingredient: resolveIngredient(token), token };
+			return {
+				kind: COMMAND_KIND.PUT,
+				ingredient: resolveIngredient(token),
+				token,
+			};
 		}
 
-		if ((COMMANDS.take as readonly string[]).includes(command)) {
+		if ((COMMANDS[COMMAND_KIND.TAKE] as readonly string[]).includes(command)) {
 			const token = rest.join(" ");
 			const slot = parseSlot(token);
-			return { kind: "take", slot, token };
+			return { kind: COMMAND_KIND.TAKE, slot, token };
 		}
 
-		if ((COMMANDS.recipe as readonly string[]).includes(command)) {
+		if (
+			(COMMANDS[COMMAND_KIND.RECIPE] as readonly string[]).includes(command)
+		) {
 			const token = rest.join(" ");
-			return { kind: "recipe", item: resolveMenuItem(token), token };
+			return {
+				kind: COMMAND_KIND.RECIPE,
+				item: resolveMenuItem(token),
+				token,
+			};
 		}
 
 		return null;

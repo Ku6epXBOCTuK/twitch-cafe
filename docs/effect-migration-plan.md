@@ -220,6 +220,23 @@ interface GameRuntime {
    исключения; дефекты не превращать в обычные игровые ответы.
 8. **Не добавлять telemetry до стабилизации ошибок.** Сначала должны быть
    стабильные теги и correlation fields, затем sinks для логов/метрик.
+9. **Enum-like описания оформлять через `as const`.** Сначала создаётся объект
+   со значениями, затем из него выводится единственный тип:
+   `const ACTION_KIND = { PUT: "put", ... } as const` и
+   `type ActionKind = (typeof ACTION_KIND)[keyof typeof ACTION_KIND]`. Для
+   связанных наборов используются отдельные объекты вроде `OPERATION`,
+   `TASK_REFUSAL`, `COMMAND_KIND` и `GAME_EVENT_TYPE`, а не ручные union.
+10. **Не дублировать union-типы.** Перед добавлением нового тега искать и
+    переиспользовать канонический объект или тип; не заводить второй
+    `TaskOperation = "put" | "serve" | "bin"` рядом с `ActionKind` и не
+    расширять тип вручную через `ActionKind | "next"`.
+11. **Discriminated union dispatch только через Effect `Match`.** Для
+    `GameEvent`, `ParsedCommand`, `TaskRefusal` и аналогичных union использовать
+    `Match.type(...).pipe(Match.when(...), Match.exhaustive)`. `switch` и
+    цепочки `if` по `reason`/`kind` запрещены; `if` допустим только для обычных
+    предикатных условий.
+12. **Новый тег события сразу проходит через все слои:** union,
+    renderer/handler, тест полезного payload и state transition.
 
 ## 6. Этапы миграции
 

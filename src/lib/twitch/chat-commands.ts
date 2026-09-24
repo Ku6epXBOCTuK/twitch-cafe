@@ -1,32 +1,110 @@
 import { Match } from "effect";
 import { MENU_ITEMS } from "../core/data/menu";
-import type { SessionManager } from "../core/game/session-manager";
-import type { TaskAck } from "../core/game/sim-dto";
-import { CommandParser, type ParsedCommand } from "./command-parser";
+import { GAME_EVENT_TYPE } from "../core/game/game-event";
+import type {
+	NextDishResult,
+	SessionManager,
+	TakeOrderResult,
+} from "../core/game/session-manager";
+import {
+	ACTION_KIND,
+	OPERATION,
+	TASK_REFUSAL,
+	type ActionKind,
+	type TaskAck,
+	type TaskRefusal,
+} from "../core/game/sim-dto";
+import {
+	COMMAND_KIND,
+	CommandParser,
+	type ParsedCommand,
+} from "./command-parser";
 import type { CommandSink } from "./command-sink";
-
-type TaskOperation = "put" | "serve" | "bin";
 
 function emitTaskFailure(
 	sink: CommandSink,
 	username: string,
-	operation: TaskOperation,
+	operation: ActionKind,
 	ack: Extract<TaskAck, { ok: false }>,
 	token: string,
 ): void {
-	if (ack.reason === "no_character") {
-		sink.emit({ type: "not_in_game", username });
-		return;
-	}
-	if (ack.reason === "busy") {
-		sink.emit({ type: "busy", username, operation });
-		return;
-	}
-	if (ack.reason === "unknown_ingredient") {
-		sink.emit({ type: "unknown_ingredient", username, token });
-		return;
-	}
-	sink.emit({ type: "tray_empty", username, operation });
+	const emitRefusal = Match.type<TaskRefusal>().pipe(
+		Match.when(TASK_REFUSAL.NO_CHARACTER, () => {
+			sink.emit({ type: GAME_EVENT_TYPE.NOT_IN_GAME, username });
+		}),
+		Match.when(TASK_REFUSAL.BUSY, () => {
+			sink.emit({ type: GAME_EVENT_TYPE.BUSY, username, operation });
+		}),
+		Match.when(TASK_REFUSAL.UNKNOWN_INGREDIENT, () => {
+			sink.emit({ type: GAME_EVENT_TYPE.UNKNOWN_INGREDIENT, username, token });
+		}),
+		Match.when(TASK_REFUSAL.TRAY_EMPTY, () => {
+			sink.emit({ type: GAME_EVENT_TYPE.TRAY_EMPTY, username, operation });
+		}),
+		Match.exhaustive,
+	);
+
+	emitRefusal(ack.reason);
+}
+
+type TakeFailure = Extract<TakeOrderResult, { ok: false }>;
+type TakeFailureReason = TakeFailure["reason"];
+
+function emitTakeFailure(
+	sink: CommandSink,
+	username: string,
+	slot: number,
+	failure: TakeFailure,
+): void {
+	const emitReason = Match.type<TakeFailureReason>().pipe(
+		Match.when("busy", () => {
+			sink.emit({
+				type: GAME_EVENT_TYPE.BUSY,
+				username,
+				operation: OPERATION.TAKE,
+			});
+		}),
+		Match.when("empty_slot", () => {
+			sink.emit({ type: GAME_EVENT_TYPE.EMPTY_SLOT, username, slot });
+		}),
+		Match.exhaustive,
+	);
+
+	emitReason(failure.reason);
+}
+
+type NextFailure = Extract<NextDishResult, { ok: false }>;
+type NextFailureReason = NextFailure["reason"];
+
+function emitNextFailure(
+	sink: CommandSink,
+	username: string,
+	hasSession: boolean,
+	failure: NextFailure,
+): void {
+	const emitReason = Match.type<NextFailureReason>().pipe(
+		Match.when("no_order", () => {
+			sink.emit({
+				type: hasSession
+					? GAME_EVENT_TYPE.NO_ACTIVE_ORDER
+					: GAME_EVENT_TYPE.NOT_IN_GAME,
+				username,
+			});
+		}),
+		Match.when("last_item", () => {
+			sink.emit({ type: GAME_EVENT_TYPE.LAST_ITEM, username });
+		}),
+		Match.when("tray_empty", () => {
+			sink.emit({
+				type: GAME_EVENT_TYPE.TRAY_EMPTY,
+				username,
+				operation: OPERATION.NEXT,
+			});
+		}),
+		Match.exhaustive,
+	);
+
+	emitReason(failure.reason);
 }
 
 /**
@@ -43,10 +121,10 @@ export function processMessage(
 	if (!cmd) return null;
 
 	const handleCommand = Match.type<ParsedCommand>().pipe(
-		Match.when({ kind: "put" }, (command) => {
+		Match.when({ kind: COMMAND_KIND.PUT }, (command) => {
 			if (!command.ingredient) {
 				sink.emit({
-					type: "unknown_ingredient",
+					type: GAME_EVENT_TYPE.UNKNOWN_INGREDIENT,
 					username,
 					token: command.token,
 				});
@@ -54,95 +132,112 @@ export function processMessage(
 			}
 			const ack = sm.putIngredient(username, command.ingredient.id);
 			if (!ack.ok) {
-				emitTaskFailure(sink, username, "put", ack, command.ingredient.id);
+				emitTaskFailure(
+					sink,
+					username,
+					ACTION_KIND.PUT,
+					ack,
+					command.ingredient.id,
+				);
 				return;
 			}
 			sink.emit({
-				type: "ingredient_added",
+				type: GAME_EVENT_TYPE.INGREDIENT_ADDED,
 				username,
 				ingredientId: command.ingredient.id,
 			});
 		}),
-		Match.when({ kind: "serve" }, () => {
+		Match.when({ kind: COMMAND_KIND.SERVE }, () => {
 			const ack = sm.serve(username);
 			if (!ack.ok) {
-				emitTaskFailure(sink, username, "serve", ack, "serve");
+				emitTaskFailure(sink, username, ACTION_KIND.SERVE, ack, "serve");
 				return;
 			}
 			const order = sm.getOrder(username);
 			const assessment = sm.getLastResult(username);
 			if (!order || !assessment) return;
-			sink.emit({ type: "order_served", username, order, assessment });
+			sink.emit({
+				type: GAME_EVENT_TYPE.ORDER_SERVED,
+				username,
+				order,
+				assessment,
+			});
 		}),
-		Match.when({ kind: "bin" }, () => {
+		Match.when({ kind: COMMAND_KIND.BIN }, () => {
 			const ack = sm.bin(username);
 			if (!ack.ok) {
-				emitTaskFailure(sink, username, "bin", ack, "bin");
+				emitTaskFailure(sink, username, ACTION_KIND.BIN, ack, "bin");
 				return;
 			}
-			sink.emit({ type: "tray_cleared", username });
+			sink.emit({ type: GAME_EVENT_TYPE.TRAY_CLEARED, username });
 		}),
-		Match.when({ kind: "menu" }, () => {
+		Match.when({ kind: COMMAND_KIND.MENU }, () => {
 			const order = sm.getActiveOrder(username);
 			if (!order) {
 				sink.emit({
-					type: sm.hasSession(username) ? "no_active_order" : "not_in_game",
+					type: sm.hasSession(username)
+						? GAME_EVENT_TYPE.NO_ACTIVE_ORDER
+						: GAME_EVENT_TYPE.NOT_IN_GAME,
 					username,
 				});
 				return;
 			}
 			const tray = sm.getTraySnapshot(username);
 			sink.emit({
-				type: "menu_state",
+				type: GAME_EVENT_TYPE.MENU_STATE,
 				username,
 				order,
 				trayLayers: tray?.layers ?? [],
 			});
 		}),
-		Match.when({ kind: "take" }, (command) => {
+		Match.when({ kind: COMMAND_KIND.TAKE }, (command) => {
 			if (command.slot === null) {
-				sink.emit({ type: "slot_required", username });
+				sink.emit({ type: GAME_EVENT_TYPE.SLOT_REQUIRED, username });
 				return;
 			}
 			const res = sm.takeOrder(username, command.slot - 1);
 			if (!res.ok) {
-				sink.emit(
-					res.reason === "busy"
-						? { type: "busy", username, operation: "take" as const }
-						: { type: "empty_slot", username, slot: command.slot },
-				);
+				emitTakeFailure(sink, username, command.slot, res);
 				return;
 			}
 			sink.emit({
-				type: "order_taken",
+				type: GAME_EVENT_TYPE.ORDER_TAKEN,
 				username,
 				order: res.order,
 				slot: command.slot,
 			});
 		}),
-		Match.when({ kind: "recipe" }, (command) => {
+		Match.when({ kind: COMMAND_KIND.RECIPE }, (command) => {
 			if (!command.token) {
-				sink.emit({ type: "recipe_arg_required", username });
+				sink.emit({ type: GAME_EVENT_TYPE.RECIPE_ARG_REQUIRED, username });
 				return;
 			}
 			const entry = command.item;
 			if (!entry) {
-				sink.emit({ type: "recipe_unknown", username, token: command.token });
+				sink.emit({
+					type: GAME_EVENT_TYPE.RECIPE_UNKNOWN,
+					username,
+					token: command.token,
+				});
 				return;
 			}
 			const item = MENU_ITEMS.find((m) => m.id === entry.id) ?? null;
 			const shown = sm.recipeBook.show(item);
 			if (!shown.ok) return;
-			sink.emit({ type: "recipe_shown", username, item: shown.item });
+			sink.emit({
+				type: GAME_EVENT_TYPE.RECIPE_SHOWN,
+				username,
+				item: shown.item,
+			});
 		}),
-		Match.when({ kind: "next" }, () => {
+		Match.when({ kind: COMMAND_KIND.NEXT }, () => {
 			const res = sm.nextDish(username);
 			if (res.ok) {
 				const order = sm.getActiveOrder(username);
 				const sealed = sm.getSealedDishes(username).at(-1);
 				if (!order || !sealed) return;
 				sink.emit({
-					type: "dish_sealed",
+					type: GAME_EVENT_TYPE.DISH_SEALED,
 					username,
 					order,
 					sealedLayers: sealed.layers,
@@ -150,18 +245,7 @@ export function processMessage(
 				});
 				return;
 			}
-			if (res.reason === "no_order") {
-				sink.emit({
-					type: sm.hasSession(username) ? "no_active_order" : "not_in_game",
-					username,
-				});
-				return;
-			}
-			if (res.reason === "last_item") {
-				sink.emit({ type: "last_item", username });
-				return;
-			}
-			sink.emit({ type: "tray_empty", username, operation: "next" });
+			emitNextFailure(sink, username, sm.hasSession(username), res);
 		}),
 		Match.exhaustive,
 	);
