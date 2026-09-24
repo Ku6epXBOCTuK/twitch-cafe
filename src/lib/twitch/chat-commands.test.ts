@@ -188,7 +188,6 @@ describe("беседа: полный игровой цикл", () => {
 
 	it("не игрок получает отказ", async () => {
 		const sm = setup();
-		warmup(sm);
 		expectEvent(await send(sm, "!взять 3", "bob"), "empty_slot");
 		expectEvent(await send(sm, "!put сыр", "bob"), "not_in_game");
 		expectEvent(await send(sm, "!serve", "bob"), "not_in_game");
@@ -236,7 +235,7 @@ describe("беседа: полный игровой цикл", () => {
 });
 
 it("после serve новый заказ виден в !заказ и на execution-мониторе", async () => {
-	const orders = [fixedBurgerOrder(), fixedColaOrder()];
+	const orders = [fixedBurgerOrder(), fixedColaOrder(), fixedColaOrder()];
 	const sm = setup(() => orders.shift()!);
 	const alice = "alice";
 	warmup(sm);
@@ -252,8 +251,7 @@ it("после serve новый заказ виден в !заказ и на exe
 	expectEvent(await send(sm, "!заказ", alice), "no_active_order");
 	expectEvent(await send(sm, "!next", alice), "no_active_order");
 
-	warmup(sm);
-	expectEvent(await send(sm, "!взять 1", alice), "order_taken");
+	expectEvent(await send(sm, "!взять 2", alice), "order_taken");
 
 	const activeOrder = sm.getActiveOrder(alice);
 	expect(activeOrder?.items.map((entry) => entry.item.id)).toEqual([cola.id]);
@@ -300,7 +298,6 @@ describe("беседа: !взять", () => {
 
 	it("!взять на пустой слот — empty_slot", async () => {
 		const sm = setup();
-		warmup(sm);
 		const event = expectEvent(await send(sm, "!взять 3"), "empty_slot");
 		expect(event.type === "empty_slot" && event.slot).toBe(3);
 	});

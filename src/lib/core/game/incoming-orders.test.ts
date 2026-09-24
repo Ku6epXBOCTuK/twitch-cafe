@@ -35,19 +35,16 @@ describe("IncomingOrders", () => {
 		);
 	});
 
-	it("наполняет слоты по тикам до SLOT_COUNT и не больше", async () => {
+	it("наполняет все свободные слоты одной волной", async () => {
 		const board = new IncomingOrders();
 		await runWithClock(
 			board,
 			Effect.gen(function* () {
 				yield* board.startEffect();
 				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
-				expect(board.getSlots().filter(Boolean)).toHaveLength(1);
-
-				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 2));
 				expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
 
-				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 5));
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 2));
 				expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
 			}),
 		);
@@ -61,7 +58,7 @@ describe("IncomingOrders", () => {
 				yield* board.startEffect();
 				yield* board.startEffect();
 				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
-				expect(board.getSlots().filter(Boolean)).toHaveLength(1);
+				expect(board.getSlots().filter(Boolean)).toHaveLength(SLOT_COUNT);
 			}),
 		);
 	});
@@ -103,25 +100,22 @@ describe("IncomingOrders", () => {
 		);
 	});
 
-	it("заказы, заспавненные позже, сгорают по своему сроку", async () => {
+	it("взятие одного слота не отменяет burn остальных", async () => {
 		const board = new IncomingOrders();
 		await runWithClock(
 			board,
 			Effect.gen(function* () {
 				yield* board.startEffect();
-				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS * 2));
+				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
 				const first = board.getSlots()[0]!;
 				const second = board.getSlots()[1]!;
-
-				yield* TestClock.adjust(
-					Duration.millis(SLOT_LIFETIME_MS - SPAWN_INTERVAL_MS),
-				);
-				expect(first.status).toBe(ORDER_STATUS.EXPIRED);
-				expect(board.getSlots()).not.toContain(first);
-				expect(board.getSlots()).toContain(second);
-
-				yield* TestClock.adjust(Duration.millis(SPAWN_INTERVAL_MS));
+				const takenResult = yield* Effect.result(board.takeOrderEffect(0));
+				if (Result.isFailure(takenResult)) throw new Error("take failed");
+				expect(takenResult.success).toBe(first);
+				yield* TestClock.adjust(Duration.millis(SLOT_LIFETIME_MS + 1));
+				expect(first.status).toBe(ORDER_STATUS.PENDING);
 				expect(second.status).toBe(ORDER_STATUS.EXPIRED);
+				expect(board.getSlots()).not.toContain(first);
 				expect(board.getSlots()).not.toContain(second);
 			}),
 		);

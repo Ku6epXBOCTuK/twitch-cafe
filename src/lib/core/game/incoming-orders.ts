@@ -106,18 +106,22 @@ export class IncomingOrders {
 		return Effect.gen(
 			function* (this: IncomingOrders) {
 				const config = yield* GameConfig;
-				const index = this.slots.findIndex((slot) => slot === null);
-				if (index === -1) return;
+				const freeIndexes = this.slots.flatMap((slot, index) =>
+					slot === null ? [index] : [],
+				);
+				if (freeIndexes.length === 0) return;
 
-				const order = this.makeOrder();
-				this.slots[index] = order;
-				const burn = Effect.sleep(
-					Duration.millis(config.SLOT_LIFETIME_MS),
-				).pipe(Effect.andThen(Effect.sync(() => this.burn(order.id))));
-				const fiber = yield* Effect.forkScoped(burn, {
-					startImmediately: false,
-				});
-				this.burnFibers.set(index, fiber);
+				for (const index of freeIndexes) {
+					const order = this.makeOrder();
+					this.slots[index] = order;
+					const burn = Effect.sleep(
+						Duration.millis(config.SLOT_LIFETIME_MS),
+					).pipe(Effect.andThen(Effect.sync(() => this.burn(order.id))));
+					const fiber = yield* Effect.forkScoped(burn, {
+						startImmediately: false,
+					});
+					this.burnFibers.set(index, fiber);
+				}
 				this.onChange();
 			}.bind(this),
 		);
