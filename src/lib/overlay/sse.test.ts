@@ -1,6 +1,6 @@
 import { Effect, Stream } from "effect";
-import { describe, expect, it } from "vitest";
-import { getGameRuntime } from "../core/game/bootstrap";
+import { afterEach, describe, expect, it } from "vitest";
+import { getGameRuntime, shutdownGame } from "../core/game/bootstrap";
 import { makeGameRuntime } from "../core/game/game-runtime";
 import { projectSnapshot } from "./projector";
 import type { OverlaySnapshot } from "./types";
@@ -9,6 +9,10 @@ import { createOverlayStream } from "./sse";
 import { burger } from "#lib/test-support";
 
 type ParsedFrame = { data: OverlaySnapshot };
+
+afterEach(() => {
+	shutdownGame();
+});
 
 async function readNextFrame(
 	reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -102,6 +106,7 @@ describe("SSE-роут /api/overlay/sse", () => {
 		});
 
 		await reader.cancel();
+		Effect.runSync(runtime.shutdown);
 	});
 
 	it("interrupts the scoped event subscription when the client cancels", async () => {

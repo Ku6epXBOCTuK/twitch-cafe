@@ -1,4 +1,5 @@
 import type { ChatClient } from "@twurple/chat";
+import { safeErrorType } from "../core/observability";
 import type { GameEvent } from "../core/game/game-event";
 import { renderEvent } from "./replies";
 
@@ -16,7 +17,7 @@ export class ChatSink implements CommandSink {
 		void this.client.say(this.channel, renderEvent(event)).catch((err) => {
 			console.error(
 				`[chat] не удалось отправить ответ в ${this.channel} (${event.correlationId}):`,
-				err,
+				{ cause: safeErrorType(err) },
 			);
 		});
 	}

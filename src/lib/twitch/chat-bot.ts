@@ -1,6 +1,7 @@
 import { StaticAuthProvider } from "@twurple/auth";
 import { ChatClient } from "@twurple/chat";
 import { Effect, Exit } from "effect";
+import { safeCause } from "../core/observability";
 import type { SessionManager } from "../core/game/session-manager";
 import { processMessage } from "./chat-commands";
 import { createCommandId } from "./command-context";
@@ -50,7 +51,7 @@ export function startChatBot(
 			if (Exit.isFailure(exit)) {
 				console.error(
 					`[chat] ${user} (${correlationId}): обработка сломалась:`,
-					exit.cause,
+					{ cause: safeCause(exit.cause) },
 				);
 			}
 		});

@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer, Queue, Scope } from "effect";
+import { Duration, Effect, Layer, Queue, Result, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { ORDER_CONFIG } from "../config";
@@ -59,6 +59,26 @@ describe("SessionManager Effect lifecycle", () => {
 			if (result.failure._tag === "TaskRefused") {
 				expect(result.failure.reason).toBe("no_character");
 			}
+		}
+	});
+
+	it("propagates a closed SIM queue as a typed failure", async () => {
+		const { port, sessionManager } = setup("closed-queue");
+		const result = await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				yield* TestClock.adjust(
+					Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS),
+				);
+				yield* sessionManager.takeOrderEffect("alice", 0);
+				yield* Queue.shutdown(port.eventQueue);
+				return yield* Effect.result(sessionManager.serveEffect("alice"));
+			}),
+		);
+
+		expect(Result.isFailure(result)).toBe(true);
+		if (Result.isFailure(result)) {
+			expect(result.failure._tag).toBe("SimQueueClosed");
 		}
 	});
 
@@ -145,6 +165,33 @@ describe("SessionManager Effect lifecycle", () => {
 
 		expect(result.orderStatus).toBe(ORDER_STATUS.COMPLETED);
 		expect(result.xpAfterDuplicate).toBe(result.xpAfterServe);
+	});
+
+	it("handles a multi-player command soak with bounded resources", async () => {
+		const { port, sessionManager } = setup("soak");
+		const players = ["alice", "bob", "carol"];
+		const metrics = await run(
+			Effect.gen(function* () {
+				yield* sessionManager.startEffect();
+				for (let round = 0; round < 10; round += 1) {
+					yield* TestClock.adjust(
+						Duration.millis(ORDER_CONFIG.SPAWN_INTERVAL_MS * 3),
+					);
+					for (const [index, username] of players.entries()) {
+						yield* sessionManager.takeOrderEffect(username, index);
+						port.trayLayers = [burger.id];
+						yield* sessionManager.serveEffect(username);
+					}
+				}
+				return sessionManager.getMetrics(0);
+			}),
+		);
+
+		expect(metrics).toMatchObject({
+			activeSessions: 3,
+			queueDepth: 0,
+			timerCount: 1,
+		});
 	});
 
 	it("timeout after serve does not change XP", async () => {

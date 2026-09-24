@@ -40,6 +40,8 @@ import { xpForRating } from "../services/scoring";
 import { OrderFactory } from "../services/order-factory";
 import { EmptySlotError, IncomingOrders } from "./incoming-orders";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
+import { GameMetrics, type GameMetricsSnapshot } from "./game-metrics";
+import { safeCause, safeErrorType } from "../observability";
 import { RecipeBook } from "./recipe-book";
 
 export class BusyError extends Data.TaggedError("Busy")<{
@@ -142,6 +144,7 @@ export class SessionManager {
 	readonly incomingOrders: IncomingOrders;
 	readonly recipeBook: RecipeBook;
 	private readonly changeListeners = new Set<SessionChangeListener>();
+	private readonly metrics = new GameMetrics();
 	private changeRevision = 0;
 
 	constructor(
@@ -265,6 +268,25 @@ export class SessionManager {
 		return () => this.changeListeners.delete(listener);
 	}
 
+	recordCommand(): void {
+		this.metrics.recordCommand();
+	}
+
+	recordFailure(): void {
+		this.metrics.recordFailure();
+	}
+
+	getMetrics(queueDepth = 0): GameMetricsSnapshot {
+		const timeoutCount = [...this.sessions.values()].filter(
+			(session) => session.timeoutFiber !== null,
+		).length;
+		return this.metrics.read(
+			queueDepth,
+			this.sessions.size,
+			this.incomingOrders.getTimerCount() + timeoutCount,
+		);
+	}
+
 	private notifyChange(): void {
 		const event: SessionChangedEvent = {
 			type: SESSION_EVENT_TYPE.CHANGED,
@@ -324,7 +346,7 @@ export class SessionManager {
 							Effect.logError("Session order timeout failed", {
 								username,
 								orderId: order.id,
-								defect,
+								cause: safeErrorType(defect),
 							}),
 						),
 					);
@@ -486,7 +508,7 @@ export class SessionManager {
 			) {
 				Effect.runSync(
 					Effect.logError("SIM event consumer failed", {
-						cause: exit.cause,
+						cause: safeCause(exit.cause),
 					}),
 				);
 			}

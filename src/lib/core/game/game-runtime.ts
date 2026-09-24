@@ -5,6 +5,7 @@ import {
 	Layer,
 	Logger,
 	PubSub,
+	Queue,
 	Random,
 	Scope,
 	Stream,
@@ -18,8 +19,10 @@ import {
 	type SessionChangedEvent,
 	type SessionSnapshot,
 } from "./session-manager";
+import type { GameMetricsSnapshot } from "./game-metrics";
 
 export { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
+export type { GameMetricsSnapshot } from "./game-metrics";
 
 const SESSION_EVENT_BUFFER_SIZE = 64;
 
@@ -40,6 +43,7 @@ export interface GameRuntime {
 	readonly core: GameCore;
 	readonly layer: ReturnType<typeof gameRuntimeLayer>;
 	readonly getSnapshot: Effect.Effect<SessionSnapshot>;
+	readonly getMetrics: Effect.Effect<GameMetricsSnapshot>;
 	readonly events: Stream.Stream<SessionChangedEvent>;
 	readonly isRunning: () => boolean;
 	readonly start: Effect.Effect<void>;
@@ -57,9 +61,15 @@ export function makeGameRuntime(
 			replay: 1,
 		}),
 	);
-	sessionManager.subscribeToChanges((event) => {
-		Effect.runSync(PubSub.publish(eventBus, event));
-	});
+	let eventBusOpen = true;
+	let unsubscribeSessionEvents: (() => void) | null = null;
+	const connectSessionEvents = () => {
+		if (unsubscribeSessionEvents) return;
+		unsubscribeSessionEvents = sessionManager.subscribeToChanges((event) => {
+			Effect.runSync(PubSub.publish(eventBus, event));
+		});
+	};
+	connectSessionEvents();
 	Effect.runSync(
 		PubSub.publish(eventBus, {
 			type: SESSION_EVENT_TYPE.CHANGED,
@@ -68,11 +78,16 @@ export function makeGameRuntime(
 		}),
 	);
 	const events = Stream.fromPubSub(eventBus);
+	const getMetrics = Effect.gen(function* () {
+		const queueDepth = yield* Queue.size(port.eventQueue);
+		return sessionManager.getMetrics(queueDepth);
+	});
 	let running = false;
 	let runtimeScope: Scope.Closeable | null = null;
 
 	const start = Effect.gen(function* () {
-		if (running) return;
+		if (running || !eventBusOpen) return;
+		connectSessionEvents();
 		const scope = yield* Scope.make();
 		yield* Scope.provide(scope)(
 			Effect.provideService(
@@ -86,8 +101,20 @@ export function makeGameRuntime(
 	});
 
 	const shutdown = Effect.gen(function* () {
-		if (!running) return;
+		if (!running) {
+			unsubscribeSessionEvents?.();
+			unsubscribeSessionEvents = null;
+			if (eventBusOpen) {
+				yield* PubSub.shutdown(eventBus);
+				eventBusOpen = false;
+			}
+			return;
+		}
 		yield* sessionManager.stopEffect();
+		unsubscribeSessionEvents?.();
+		unsubscribeSessionEvents = null;
+		yield* PubSub.shutdown(eventBus);
+		eventBusOpen = false;
 		const scope = runtimeScope;
 		runtimeScope = null;
 		running = false;
@@ -98,6 +125,7 @@ export function makeGameRuntime(
 		core: { sessionManager, port },
 		layer: gameRuntimeLayer(config),
 		getSnapshot: sessionManager.getSnapshotEffect(),
+		getMetrics,
 		events,
 		isRunning: () => running,
 		start,

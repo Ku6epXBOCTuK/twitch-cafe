@@ -5,11 +5,14 @@ import {
 	TWITCH_CLIENT_ID,
 	TWITCH_REACT_TO_SELF,
 } from "$app/env/private";
-import { getGameRuntime } from "#lib/core/game/bootstrap";
+import { getGameRuntime, shutdownGame } from "#lib/core/game/bootstrap";
 import { missingBotEnvVars } from "#lib/twitch/bootstrap";
 import { startBotFromEnv } from "#lib/twitch/bootstrap";
 
+import type { ChatClient } from "@twurple/chat";
+
 let initialized = false;
+let botClient: ChatClient | null = null;
 
 function init(): void {
 	if (initialized) return;
@@ -29,7 +32,31 @@ function init(): void {
 		process.exit(1);
 	}
 	const { sessionManager } = getGameRuntime().core;
-	startBotFromEnv(sessionManager, env);
+	botClient = startBotFromEnv(sessionManager, env);
 }
 
+function disposeApplication(): void {
+	botClient?.quit();
+	botClient = null;
+	shutdownGame();
+	process.removeListener("SIGTERM", onSigterm);
+	process.removeListener("SIGINT", onSigint);
+}
+
+const onSigterm = () => {
+	disposeApplication();
+	process.exit(0);
+};
+const onSigint = () => {
+	disposeApplication();
+	process.exit(0);
+};
+
 init();
+
+if (import.meta.hot) {
+	import.meta.hot.dispose(disposeApplication);
+}
+
+process.once("SIGTERM", onSigterm);
+process.once("SIGINT", onSigint);

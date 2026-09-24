@@ -73,6 +73,10 @@ export class IncomingOrders {
 		return this.running;
 	}
 
+	getTimerCount(): number {
+		return this.burnFibers.size + (this.loopFiber ? 1 : 0);
+	}
+
 	getSlots(): readonly (IOrder | null)[] {
 		return [...this.slots];
 	}

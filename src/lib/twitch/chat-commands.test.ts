@@ -194,6 +194,12 @@ describe("беседа: полный игровой цикл", () => {
 		expectEvent(await send(sm, "!serve", "bob"), "not_in_game");
 	});
 
+	it("counts commands and expected failures in runtime metrics", async () => {
+		const sm = setup();
+		await send(sm, "!put сыр", "bob");
+		expect(sm.getMetrics()).toMatchObject({ commands: 1, failures: 1 });
+	});
+
 	it("не скрывает defect: ошибка команды не превращается в GameEvent", async () => {
 		const sm = setup();
 		vi.spyOn(sm, "serveEffect").mockReturnValue(Effect.die(new Error("boom")));

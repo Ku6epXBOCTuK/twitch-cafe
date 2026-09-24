@@ -32,6 +32,8 @@ const forbiddenPatterns = [
 		/incomingOrders\.(start|stop|spawn|takeOrder)\s*\(/,
 	],
 	["ad-hoc ok result", /\{\s*ok\s*:/],
+	["unbounded queue or PubSub", /\b(?:Queue|PubSub)\.unbounded\b/],
+	["unscoped fiber", /\bEffect\.fork\s*\(/],
 ];
 
 const files = await collectFiles(sourceRoot);

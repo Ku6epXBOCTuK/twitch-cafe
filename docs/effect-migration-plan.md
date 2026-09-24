@@ -50,7 +50,7 @@ spike не проходит, миграция останавливается н�
 ## 2. Текущее состояние проекта
 
 Текущий baseline: `pnpm test`, `pnpm check` и `pnpm lint` проходят; Vitest
-запускает 15 test-файлов и 118 тестов.
+запускает 19 test-файлов и 130 тестов.
 
 Основные места, которые предстоит сделать надёжнее:
 
@@ -438,6 +438,11 @@ snapshot используется только для первичного со�
 
 **Готово:** production smoke test проходит, а отказ одного слоя не приводит к
 тихой остановке процесса или неконсистентному XP.
+
+**Выполнено 2026-09-24:** graceful shutdown закрывает event bus и освобождает
+SIM/timers, HMR dispose отключает runtime и ChatClient, overlay reconnect
+защищён от stale callbacks; добавлены bounded metrics, fault-injection, soak и
+security-тесты.
 
 ## 7. Параллельная работа над тестами
 

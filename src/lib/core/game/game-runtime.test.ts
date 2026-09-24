@@ -1,4 +1,4 @@
-import { Clock, Effect, Layer, Random } from "effect";
+import { Clock, Effect, Layer, Random, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ORDER_CONFIG } from "../config";
@@ -31,6 +31,38 @@ describe("GameRuntime", () => {
 		expect(Effect.runSync(runtime.getSnapshot)).toEqual(
 			runtime.core.sessionManager.getSnapshot(),
 		);
+	});
+
+	it("closes event subscriptions during shutdown", async () => {
+		const runtime = makeGameRuntime();
+		Effect.runSync(runtime.start);
+		const reader = Stream.toReadableStream(runtime.events).getReader();
+		const first = await reader.read();
+		expect(first.done).toBe(false);
+
+		Effect.runSync(runtime.shutdown);
+		const next = await reader.read();
+		expect(next.done).toBe(true);
+	});
+
+	it("reports bounded resource metrics and clears timers on shutdown", () => {
+		const runtime = makeGameRuntime();
+		runtime.core.sessionManager.recordCommand();
+		runtime.core.sessionManager.recordFailure();
+
+		Effect.runSync(runtime.start);
+		expect(Effect.runSync(runtime.getMetrics)).toMatchObject({
+			commands: 1,
+			failures: 1,
+			queueDepth: 0,
+			activeSessions: 0,
+			timerCount: 1,
+		});
+
+		Effect.runSync(runtime.shutdown);
+		expect(Effect.runSync(runtime.getMetrics)).toMatchObject({
+			timerCount: 0,
+		});
 	});
 
 	it("composes config, clock and random services", async () => {

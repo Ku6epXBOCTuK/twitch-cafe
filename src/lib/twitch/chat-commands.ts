@@ -160,14 +160,21 @@ function runTake(
 	effect: TakeEffect,
 	onSuccess: (order: IOrder) => void,
 	onFailure: (reason: TakeFailureReason) => void,
+	onRejected: () => void,
 ): Effect.Effect<void, never> {
 	return effect.pipe(
 		Effect.flatMap((order) => Effect.sync(() => onSuccess(order))),
 		Effect.catchTag("Busy", (_error: BusyError) =>
-			Effect.sync(() => onFailure(TAKE_ORDER_REASON.BUSY)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(TAKE_ORDER_REASON.BUSY);
+			}),
 		),
 		Effect.catchTag("EmptySlot", (_error: EmptySlotError) =>
-			Effect.sync(() => onFailure(TAKE_ORDER_REASON.EMPTY_SLOT)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(TAKE_ORDER_REASON.EMPTY_SLOT);
+			}),
 		),
 	);
 }
@@ -176,17 +183,27 @@ function runNext(
 	effect: NextEffect,
 	onSuccess: () => void,
 	onFailure: (reason: NextFailureReason) => void,
+	onRejected: () => void,
 ): Effect.Effect<void, never> {
 	return effect.pipe(
 		Effect.flatMap(() => Effect.sync(onSuccess)),
 		Effect.catchTag("NoOrder", (_error) =>
-			Effect.sync(() => onFailure(NEXT_DISH_REASON.NO_ORDER)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(NEXT_DISH_REASON.NO_ORDER);
+			}),
 		),
 		Effect.catchTag("LastItem", (_error) =>
-			Effect.sync(() => onFailure(NEXT_DISH_REASON.LAST_ITEM)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(NEXT_DISH_REASON.LAST_ITEM);
+			}),
 		),
 		Effect.catchTag("TrayEmpty", (_error) =>
-			Effect.sync(() => onFailure(NEXT_DISH_REASON.TRAY_EMPTY)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(NEXT_DISH_REASON.TRAY_EMPTY);
+			}),
 		),
 	);
 }
@@ -195,11 +212,15 @@ function runTask(
 	effect: TaskEffect,
 	onSuccess: () => void,
 	onFailure: (error: TaskRefusedError) => void,
+	onRejected: () => void,
 ): Effect.Effect<void, CommandEffectError> {
 	return effect.pipe(
 		Effect.flatMap(() => Effect.sync(onSuccess)),
 		Effect.catchTag("TaskRefused", (error) =>
-			Effect.sync(() => onFailure(error)),
+			Effect.sync(() => {
+				onRejected();
+				onFailure(error);
+			}),
 		),
 	);
 }
@@ -213,12 +234,14 @@ export function processMessage(
 ): Effect.Effect<void, CommandEffectError> {
 	const cmd = CommandParser.parse(raw);
 	if (!cmd) return Effect.void;
+	sm.recordCommand();
 
 	const handleCommand = Match.type<ParsedCommand>().pipe(
 		Match.when({ kind: COMMAND_KIND.PUT }, (command) =>
 			Effect.gen(function* () {
 				const ingredient = command.ingredient;
 				if (!ingredient) {
+					sm.recordFailure();
 					emitEvent(sink, correlationId, {
 						type: GAME_EVENT_TYPE.UNKNOWN_INGREDIENT,
 						username,
@@ -243,6 +266,7 @@ export function processMessage(
 							error,
 							ingredient.id,
 						),
+					() => sm.recordFailure(),
 				);
 			}),
 		),
@@ -272,6 +296,7 @@ export function processMessage(
 							error,
 							"serve",
 						),
+					() => sm.recordFailure(),
 				);
 			}),
 		),
@@ -293,6 +318,7 @@ export function processMessage(
 							error,
 							"bin",
 						),
+					() => sm.recordFailure(),
 				);
 			}),
 		),
@@ -300,6 +326,7 @@ export function processMessage(
 			Effect.sync(() => {
 				const order = sm.getActiveOrder(username);
 				if (!order) {
+					sm.recordFailure();
 					emitEvent(sink, correlationId, {
 						type: sm.hasSession(username)
 							? GAME_EVENT_TYPE.NO_ACTIVE_ORDER
@@ -321,6 +348,7 @@ export function processMessage(
 			Effect.gen(function* () {
 				const slot = command.slot;
 				if (slot === null) {
+					sm.recordFailure();
 					emitEvent(sink, correlationId, {
 						type: GAME_EVENT_TYPE.SLOT_REQUIRED,
 						username,
@@ -338,12 +366,14 @@ export function processMessage(
 						}),
 					(reason) =>
 						emitTakeFailure(sink, correlationId, username, slot, reason),
+					() => sm.recordFailure(),
 				);
 			}),
 		),
 		Match.when({ kind: COMMAND_KIND.RECIPE }, (command) =>
 			Effect.sync(() => {
 				if (!command.token) {
+					sm.recordFailure();
 					emitEvent(sink, correlationId, {
 						type: GAME_EVENT_TYPE.RECIPE_ARG_REQUIRED,
 						username,
@@ -355,6 +385,7 @@ export function processMessage(
 					? MENU_ITEMS.find((menuItem) => menuItem.id === entry.id)
 					: undefined;
 				if (!item) {
+					sm.recordFailure();
 					emitEvent(sink, correlationId, {
 						type: GAME_EVENT_TYPE.RECIPE_UNKNOWN,
 						username,
@@ -396,11 +427,15 @@ export function processMessage(
 							sm.hasSession(username),
 							reason,
 						),
+					() => sm.recordFailure(),
 				);
 			}),
 		),
 		Match.exhaustive,
 	);
 
-	return handleCommand(cmd);
+	return handleCommand(cmd).pipe(
+		Effect.tapError(() => Effect.sync(() => sm.recordFailure())),
+		Effect.tapDefect(() => Effect.sync(() => sm.recordFailure())),
+	);
 }

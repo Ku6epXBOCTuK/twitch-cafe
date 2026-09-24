@@ -69,7 +69,7 @@
 | Настоящий SIM            | Не реализован     | `miniplex` установлен, но мир, тик и движение не подключены.                                                      |
 | Проекция и SSE           | Работает          | `GameRuntime.events` — bounded event stream; snapshot только для initial/replay, SSE без polling.                 |
 | Pixi overlay             | Работает частично | Есть сцена и мониторы; координаты игроков, звёзды, часть заголовков и lifecycle требуют доработки.                |
-| Тесты и проверки         | Работает          | Есть Vitest, Svelte check, ESLint, Prettier и `check:legacy`.                                                     |
+| Тесты и проверки         | Работает          | Есть Vitest, Svelte check, ESLint, Prettier, `check:legacy`, fault-injection, soak и graceful-shutdown тесты.     |
 
 ## 4. Архитектура
 
@@ -104,7 +104,9 @@ miniplex-мир, `world.ts`, `simulation.ts` и системы движения 
 `projector.ts` получает `SessionSnapshot` из события runtime и строит
 `OverlaySnapshot`. `GameRuntime.events` отдаёт initial replay и последующие
 `SessionChangedEvent` через `Stream`; SSE-роут не polls и не вычисляет игровые
-решения. Фронт не принимает решения и не изменяет игровое состояние.
+решения. `GameRuntime.getMetrics` предоставляет bounded counters для команд,
+ошибок, очереди, сессий и таймеров. Фронт не принимает решения и не изменяет
+игровое состояние.
 
 ## 5. Зафиксированные контракты
 
@@ -142,8 +144,9 @@ miniplex-мир, `world.ts`, `simulation.ts` и системы движения 
    backend хранит `0..1`; координаты игроков остаются `(0, 0)`.
 6. **Событийная модель:** SSE уже подписан на `GameRuntime.events`; анимации и
    проактивные уведомления отложены.
-7. **HMR:** bootstrap хранит runtime в module-local переменной, а клиент бота не
-   гарантированно отключается при повторной инициализации в dev.
+7. **HMR:** runtime и ChatClient очищаются через `import.meta.hot.dispose`;
+   полная проверка dev-сервера и reconnect-инфраструктуры Twitch остаётся
+   отдельной smoke-проверкой.
 8. **Состояние в памяти:** XP, сессии и заказы сбрасываются при перезапуске;
    постоянного хранилища и удаления отключившихся игроков нет.
 

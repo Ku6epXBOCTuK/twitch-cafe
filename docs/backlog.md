@@ -133,13 +133,15 @@
 
 ### B08 — Закрывать SSE-подключение при размонтировании страницы
 
-- **Статус:** `[ ]`
+- **Статус:** `[x]`
 - **Приоритет:** P1
 - **Сложность:** low
-- **Сделать:** использовать существующий `disconnect()` из overlay-store в
-  cleanup `+page.svelte`.
-- **Тест/проверка:** после ухода со страницы новый `EventSource` не остаётся
-  активным; приложение не получает callback после destroy.
+- **Сделано:** `+page.svelte` вызывает `disconnect()` в cleanup;
+  async-инициализация проверяет disposed до подключения, а `overlay-store`
+  защищает reconnect от stale callbacks.
+- **Тест/проверка:** `overlay-store.test.ts` проверяет malformed payload,
+  cleanup timer и stale EventSource; после destroy новый EventSource не
+  создаётся.
 
 ### B09 — Разрешать команды автоматически по уникальному префиксу
 
@@ -250,6 +252,18 @@
   orchestration использует Effect-типизированные ошибки и `GameEvent`.
 - **Проверка:** `pnpm check:legacy` запрещает возврат legacy-символов,
   sync-путей, ad-hoc `{ ok: ... }` и ручных таймеров в core/SIM.
+
+### B16 — Production hardening и минимальные метрики
+
+- **Статус:** `[x]`
+- **Приоритет:** P1
+- **Сложность:** medium
+- **Сделано:** graceful shutdown закрывает event bus и освобождает SIM/timers;
+  HMR dispose отключает ChatClient и runtime; overlay reconnect защищён от stale
+  callbacks; `GameRuntime.getMetrics` отдаёт commands, failures, queue depth,
+  active sessions и timer count.
+- **Проверка:** fault-injection для closed SIM queue и Twitch sink, multi-player
+  soak, bounded resource metrics, safe error labels и полный production build.
 
 ## 4. После MVP
 
