@@ -4,6 +4,8 @@ import type { ISimPort } from "../core/game/sim-port";
 import type { ISimEvents } from "../core/game/sim-port";
 import {
 	ACTION_KIND,
+	TASK_REFUSAL,
+	type CancelReason,
 	type SimSnapshot,
 	type TaskAck,
 	type TaskIntent,
@@ -28,6 +30,7 @@ export interface StubSimOptions {
  */
 export class StubSim implements ISimPort {
 	private readonly players = new Map<string, StubPlayer>();
+	private sequence = 0;
 
 	constructor(
 		private readonly events: ISimEvents,
@@ -48,23 +51,27 @@ export class StubSim implements ISimPort {
 
 	enqueueTask(username: string, intent: TaskIntent): TaskAck {
 		const player = this.players.get(username);
-		if (!player) return { ok: false, reason: "no_character" };
+		if (!player) {
+			return { ok: false, reason: TASK_REFUSAL.NO_CHARACTER };
+		}
 
 		const now = Date.now();
 		const base = {
 			type: "ACTION_COMPLETED" as const,
 			username,
+			orderId: player.orderId,
 			finishedAt: now,
 			action: { kind: intent.kind, targetId: 0, startedAt: player.startedAt },
 		};
 
 		if (intent.kind === ACTION_KIND.PUT) {
 			if (!this.options.allowedIngredientIds.has(intent.ingredientId)) {
-				return { ok: false, reason: "unknown_ingredient" };
+				return { ok: false, reason: TASK_REFUSAL.UNKNOWN_INGREDIENT };
 			}
 			player.layers.push(intent.ingredientId);
 			this.events.onActionCompleted({
 				...base,
+				sequence: ++this.sequence,
 				action: { ...base.action, ingredientId: intent.ingredientId },
 			});
 			return { ok: true };
@@ -72,21 +79,22 @@ export class StubSim implements ISimPort {
 
 		if (intent.kind === ACTION_KIND.BIN) {
 			player.layers.length = 0;
-			this.events.onActionCompleted(base);
+			this.events.onActionCompleted({ ...base, sequence: ++this.sequence });
 			return { ok: true };
 		}
 
 		if (player.layers.length === 0) {
-			return { ok: false, reason: "tray_empty" };
+			return { ok: false, reason: TASK_REFUSAL.TRAY_EMPTY };
 		}
 		this.events.onActionCompleted({
 			...base,
+			sequence: ++this.sequence,
 			tray: { username, layers: [...player.layers], frozenAt: now },
 		});
 		return { ok: true };
 	}
 
-	cancelOrder(username: string, _reason: "timeout" | "leave"): void {
+	cancelOrder(username: string, _reason: CancelReason): void {
 		const player = this.players.get(username);
 		if (player) player.layers.length = 0;
 	}

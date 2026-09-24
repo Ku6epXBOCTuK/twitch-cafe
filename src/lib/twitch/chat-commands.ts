@@ -1,6 +1,10 @@
 import { Match } from "effect";
 import { MENU_ITEMS } from "../core/data/menu";
 import { GAME_EVENT_TYPE } from "../core/game/game-event";
+import {
+	NEXT_DISH_REASON,
+	TAKE_ORDER_REASON,
+} from "../core/game/failure-reasons";
 import type {
 	NextDishResult,
 	SessionManager,
@@ -57,14 +61,14 @@ function emitTakeFailure(
 	failure: TakeFailure,
 ): void {
 	const emitReason = Match.type<TakeFailureReason>().pipe(
-		Match.when("busy", () => {
+		Match.when(TAKE_ORDER_REASON.BUSY, () => {
 			sink.emit({
 				type: GAME_EVENT_TYPE.BUSY,
 				username,
 				operation: OPERATION.TAKE,
 			});
 		}),
-		Match.when("empty_slot", () => {
+		Match.when(TAKE_ORDER_REASON.EMPTY_SLOT, () => {
 			sink.emit({ type: GAME_EVENT_TYPE.EMPTY_SLOT, username, slot });
 		}),
 		Match.exhaustive,
@@ -83,7 +87,7 @@ function emitNextFailure(
 	failure: NextFailure,
 ): void {
 	const emitReason = Match.type<NextFailureReason>().pipe(
-		Match.when("no_order", () => {
+		Match.when(NEXT_DISH_REASON.NO_ORDER, () => {
 			sink.emit({
 				type: hasSession
 					? GAME_EVENT_TYPE.NO_ACTIVE_ORDER
@@ -91,10 +95,10 @@ function emitNextFailure(
 				username,
 			});
 		}),
-		Match.when("last_item", () => {
+		Match.when(NEXT_DISH_REASON.LAST_ITEM, () => {
 			sink.emit({ type: GAME_EVENT_TYPE.LAST_ITEM, username });
 		}),
-		Match.when("tray_empty", () => {
+		Match.when(NEXT_DISH_REASON.TRAY_EMPTY, () => {
 			sink.emit({
 				type: GAME_EVENT_TYPE.TRAY_EMPTY,
 				username,

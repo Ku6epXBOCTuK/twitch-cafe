@@ -85,10 +85,17 @@ describe("SessionManager: takeOrder", () => {
 });
 
 describe("SessionManager: serve", () => {
-	function serveEvent(username: string, frozenAt: number, layers: string[]) {
+	function serveEvent(
+		username: string,
+		frozenAt: number,
+		layers: string[],
+		orderId = "test-order",
+	) {
 		return {
 			type: "ACTION_COMPLETED" as const,
 			username,
+			orderId,
+			sequence: 1,
 			finishedAt: frozenAt,
 			action: { kind: "serve" as const, targetId: 0, startedAt: 0 },
 			tray: { username, layers, frozenAt },
@@ -100,7 +107,7 @@ describe("SessionManager: serve", () => {
 		takeOrder(sm, "alice");
 		port.trayLayers = BURGER_IDS;
 
-		const e = serveEvent("alice", 1000, BURGER_IDS);
+		const e = serveEvent("alice", 1000, BURGER_IDS, "order-burger");
 		sm.onActionCompleted(e);
 		const result = sm.getLastResult("alice");
 		const xpAfterFirstEvent = sm.getXp("alice");

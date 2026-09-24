@@ -4,6 +4,7 @@ import type {
 	ActionCompletedEvent,
 	ActionStartedEvent,
 	CharacterRemovedEvent,
+	CancelReason,
 	SimSnapshot,
 	TaskAck,
 	TaskIntent,
@@ -15,7 +16,7 @@ export interface ISimPort {
 	/** `!put` / `!bin` / `!serve`: принять или отказать. */
 	enqueueTask(username: string, intent: TaskIntent): TaskAck;
 	/** Таймаут/выход: оборвать действие и очистить поднос. */
-	cancelOrder(username: string, reason: "timeout" | "leave"): void;
+	cancelOrder(username: string, reason: CancelReason): void;
 	/** Запечатать блюдо (`!next`): очистить поднос, персонаж остаётся. */
 	clearTray(username: string): void;
 	/** Забрать персонажа (дисконнект). */

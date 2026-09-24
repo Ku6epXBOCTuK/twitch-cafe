@@ -71,6 +71,8 @@ describe("StubSim: enqueueTask", () => {
 		expect(events.events[0]).toMatchObject({
 			type: "ACTION_COMPLETED",
 			username: "alice",
+			orderId: "o1",
+			sequence: 1,
 			action: { kind: "put", ingredientId: INGREDIENTS.cheese.id },
 		});
 	});

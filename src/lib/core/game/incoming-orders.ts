@@ -12,9 +12,11 @@ import {
 import { ORDER_STATUS, type IOrder } from "../types/order";
 import { OrderFactory } from "../services/order-factory";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
+import { TAKE_ORDER_REASON } from "./failure-reasons";
 
 export type TakeOrderResult =
-	{ ok: true; order: IOrder } | { ok: false; reason: "empty_slot" };
+	| { ok: true; order: IOrder }
+	| { ok: false; reason: typeof TAKE_ORDER_REASON.EMPTY_SLOT };
 
 export class EmptySlotError extends Data.TaggedError("EmptySlot")<{
 	readonly slot: number;
@@ -128,7 +130,7 @@ export class IncomingOrders {
 			Effect.result(this.takeOrderEffect(slotIndex)),
 		);
 		if (Result.isSuccess(result)) return { ok: true, order: result.success };
-		return { ok: false, reason: "empty_slot" };
+		return { ok: false, reason: TAKE_ORDER_REASON.EMPTY_SLOT };
 	}
 
 	spawnEffect(): TimedEffect<void> {

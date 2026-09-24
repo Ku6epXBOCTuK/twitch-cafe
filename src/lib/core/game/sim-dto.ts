@@ -35,6 +35,13 @@ export const TASK_REFUSAL = {
 
 export type TaskRefusal = (typeof TASK_REFUSAL)[keyof typeof TASK_REFUSAL];
 
+export const CANCEL_REASON = {
+	TIMEOUT: "timeout",
+	LEAVE: "leave",
+} as const;
+
+export type CancelReason = (typeof CANCEL_REASON)[keyof typeof CANCEL_REASON];
+
 export type TaskAck = { ok: true } | { ok: false; reason: TaskRefusal };
 
 export interface ActionInfo {
@@ -62,9 +69,11 @@ export type SimOutEvent =
 	| {
 			type: "ACTION_COMPLETED";
 			username: string;
+			orderId: string;
+			sequence: number;
 			finishedAt: number;
 			action: ActionInfo;
-			tray?: ITraySnapshot; // только для kind === "serve"
+			tray?: ITraySnapshot;
 	  }
 	| { type: "CHARACTER_REMOVED"; username: string };
 

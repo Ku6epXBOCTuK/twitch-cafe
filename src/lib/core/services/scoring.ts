@@ -1,4 +1,12 @@
-export type Verdict = "perfect" | "good" | "ok" | "bad" | "awful";
+export const VERDICT = {
+	PERFECT: "perfect",
+	GOOD: "good",
+	OK: "ok",
+	BAD: "bad",
+	AWFUL: "awful",
+} as const;
+
+export type Verdict = (typeof VERDICT)[keyof typeof VERDICT];
 
 export interface RatingDeltas {
 	missing: number;
@@ -34,11 +42,11 @@ export function computeRating(
 }
 
 export function verdictFor(rating: number): Verdict {
-	if (rating >= SCORING_CONFIG.PERFECT) return "perfect";
-	if (rating >= SCORING_CONFIG.GOOD) return "good";
-	if (rating >= SCORING_CONFIG.OK) return "ok";
-	if (rating > 0) return "bad";
-	return "awful";
+	if (rating >= SCORING_CONFIG.PERFECT) return VERDICT.PERFECT;
+	if (rating >= SCORING_CONFIG.GOOD) return VERDICT.GOOD;
+	if (rating >= SCORING_CONFIG.OK) return VERDICT.OK;
+	if (rating > 0) return VERDICT.BAD;
+	return VERDICT.AWFUL;
 }
 
 /** Symmetрично: идеал +XP_BASE, ноль −XP_BASE, полсередины — 0. */

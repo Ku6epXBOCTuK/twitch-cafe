@@ -40,11 +40,7 @@ export function makeGameRuntime(
 		const scope = yield* Scope.make();
 		yield* Scope.provide(scope)(
 			Effect.provideService(
-				Effect.provideService(
-					sessionManager.incomingOrders.startEffect(),
-					GameConfig,
-					config,
-				),
+				Effect.provideService(sessionManager.startEffect(), GameConfig, config),
 				Clock.Clock,
 				Clock.Clock.defaultValue(),
 			),
@@ -55,7 +51,7 @@ export function makeGameRuntime(
 
 	const shutdown = Effect.gen(function* () {
 		if (!running) return;
-		yield* sessionManager.incomingOrders.stopEffect();
+		yield* sessionManager.stopEffect();
 		const scope = runtimeScope;
 		runtimeScope = null;
 		running = false;
