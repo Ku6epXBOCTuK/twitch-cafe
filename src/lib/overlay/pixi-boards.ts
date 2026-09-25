@@ -12,6 +12,9 @@ import type { OverlaySnapshot } from "./types";
 
 const SLOT_WIDTH = 150;
 const SLOT_HEIGHT = 190;
+const SLOT_HEADER_HEIGHT = 20;
+const SLOT_HEADER_GAP = 4;
+const SLOT_BODY_TOP = 44;
 const SLOT_GAP = 12;
 const BOARD_MARGIN = 16;
 const BOARD_PADDING = 10;
@@ -27,6 +30,17 @@ const TITLE_STYLE = new TextStyle({
 	fontSize: 22,
 	fontWeight: "bold",
 	fill: 0xffffff,
+});
+
+const HEADER_STYLE = new TextStyle({
+	fontFamily: "Arial, sans-serif",
+	fontSize: 14,
+	fontWeight: "bold",
+	fill: 0xffd166,
+	align: "center",
+	wordWrap: true,
+	wordWrapWidth: SLOT_WIDTH - 16,
+	breakWords: true,
 });
 
 const LABEL_STYLE = new TextStyle({
@@ -51,6 +65,7 @@ const HINT_STYLE = new TextStyle({
 
 interface Board {
 	container: Container;
+	headers: Text[];
 	texts: Text[];
 	width: number;
 	height: number;
@@ -63,7 +78,12 @@ function createBoard(title: string, slotCount: number): Board {
 	const slotsWidth = slotCount * (SLOT_WIDTH + SLOT_GAP) - SLOT_GAP;
 	const titleText = new Text({ text: title, style: TITLE_STYLE });
 	titleText.position.set(BOARD_PADDING, BOARD_PADDING);
-	const slotsTop = BOARD_PADDING + titleText.height + SLOT_GAP;
+	const slotsTop =
+		BOARD_PADDING +
+		titleText.height +
+		SLOT_GAP +
+		SLOT_HEADER_HEIGHT +
+		SLOT_HEADER_GAP;
 
 	const panel = new Graphics();
 	panel.roundRect(
@@ -78,6 +98,7 @@ function createBoard(title: string, slotCount: number): Board {
 	container.addChild(titleText);
 
 	const frameTexture = getTexture("boards.frame");
+	const headers: Text[] = [];
 	const texts: Text[] = [];
 	for (let i = 0; i < slotCount; i++) {
 		const slot = new Container();
@@ -95,7 +116,16 @@ function createBoard(title: string, slotCount: number): Board {
 			slot.addChild(frame);
 		}
 
+		const header = new Text({ text: "", style: HEADER_STYLE });
+		header.position.set(
+			BOARD_PADDING + i * (SLOT_WIDTH + SLOT_GAP),
+			slotsTop - SLOT_HEADER_HEIGHT - SLOT_HEADER_GAP,
+		);
+		container.addChild(header);
+		headers.push(header);
+
 		const text = new Text({ text: "", style: LABEL_STYLE });
+		text.position.set(BOARD_PADDING, SLOT_BODY_TOP);
 		slot.addChild(text);
 		texts.push(text);
 		container.addChild(slot);
@@ -103,7 +133,7 @@ function createBoard(title: string, slotCount: number): Board {
 
 	const width = slotsWidth + BOARD_PADDING * 2;
 	const height = slotsTop + SLOT_HEIGHT + BOARD_PADDING;
-	return { container, texts, width, height };
+	return { container, headers, texts, width, height };
 }
 
 /** Окно с одним текстовым блоком (подсказки): высота — по высоте контента. */
@@ -126,15 +156,17 @@ function createTextBoard(title: string, content: string, width: number): Board {
 	container.addChild(titleText);
 	container.addChild(text);
 
-	return { container, texts: [text], width, height };
+	return { container, headers: [], texts: [text], width, height };
 }
 
 function updateText(text: Text, content: string): void {
 	text.text = content;
-	text.position.set(
-		(SLOT_WIDTH - text.width) / 2,
-		(SLOT_HEIGHT - text.height) / 2,
-	);
+	text.position.set((SLOT_WIDTH - text.width) / 2, SLOT_BODY_TOP);
+}
+
+function updateHeader(text: Text, content: string, left: number): void {
+	text.text = content;
+	text.position.set(left + (SLOT_WIDTH - text.width) / 2, text.position.y);
 }
 
 function formatTimeLeft(deadline: number): string {
@@ -145,26 +177,22 @@ function formatTimeLeft(deadline: number): string {
 }
 
 function incomingText(
-	slot: number,
 	dishes: string[],
-	strictness: number,
+	strictnessStars: number,
 	deadline: number,
 ): string {
 	return [
-		`Заказ ${slot}`,
 		dishes.join("\n"),
-		`придирчивость ${strictness}/5`,
+		`Строгость ${strictnessStars}/5`,
 		`осталось ${formatTimeLeft(deadline)}`,
 	].join("\n");
 }
 
 function executionText(
-	performer: string,
 	dishes: { name: string; done: boolean }[],
 	deadline: number,
 ): string {
 	return [
-		performer,
 		dishes.map((d) => `${d.done ? "✓" : "•"} ${d.name}`).join("\n"),
 		`осталось ${formatTimeLeft(deadline)}`,
 	].join("\n");
@@ -220,31 +248,38 @@ export function createBoards(app: Application): OverlayBoards {
 	return {
 		update(snapshot) {
 			incoming.texts.forEach((text, index) => {
-				// Карточка живёт в своём слоте: номер = слот из `!взять N`.
 				const order = snapshot.incoming.find(
 					(entry) => entry.slot === index + 1,
+				);
+				updateHeader(
+					incoming.headers[index],
+					order ? `Слот ${order.slot}` : "",
+					BOARD_PADDING + index * (SLOT_WIDTH + SLOT_GAP),
 				);
 				updateText(
 					text,
 					order
-						? incomingText(
-								order.slot,
-								order.dishes,
-								order.strictness,
-								order.deadline,
-							)
+						? incomingText(order.dishes, order.strictnessStars, order.deadline)
 						: "",
 				);
 			});
 			for (let i = 0; i < execution.texts.length; i++) {
 				const order = snapshot.execution[i];
+				updateHeader(
+					execution.headers[i],
+					order?.performer ?? "",
+					BOARD_PADDING + i * (SLOT_WIDTH + SLOT_GAP),
+				);
 				updateText(
 					execution.texts[i],
-					order
-						? executionText(order.performer, order.dishes, order.deadline)
-						: "",
+					order ? executionText(order.dishes, order.deadline) : "",
 				);
 			}
+			updateHeader(
+				recipe.headers[0],
+				snapshot.recipe ? "Сейчас готовим" : "",
+				BOARD_PADDING,
+			);
 			updateText(
 				recipe.texts[0],
 				snapshot.recipe

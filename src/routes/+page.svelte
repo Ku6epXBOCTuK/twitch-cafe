@@ -7,6 +7,7 @@
 	import { onMount } from "svelte";
 
 	let canvas = $state<HTMLCanvasElement | null>(null);
+	let initError = $state<string | null>(null);
 
 	onMount(() => {
 		const app = new Application();
@@ -17,8 +18,9 @@
 
 		(async () => {
 			try {
+				if (!canvas) throw new Error("Canvas unavailable");
 				await app.init({
-					canvas: canvas!,
+					canvas,
 					resizeTo: window,
 					backgroundAlpha: 0,
 				});
@@ -35,9 +37,10 @@
 				connect();
 			} catch (error) {
 				if (!disposed) {
+					initError = "Не удалось загрузить оверлей. Обновите страницу.";
 					console.error(
 						"[overlay] initialization failed:",
-						error instanceof Error ? error.message : "unknown error",
+						error instanceof Error ? error.name : "UnknownError",
 					);
 				}
 			}
@@ -53,9 +56,27 @@
 	});
 </script>
 
+{#if initError}
+	<div class="overlay-error" role="alert">{initError}</div>
+{/if}
+
 <canvas bind:this={canvas}></canvas>
 
 <style>
+	.overlay-error {
+		position: fixed;
+		inset: 1rem auto auto 1rem;
+		z-index: 1;
+		max-width: min(32rem, calc(100vw - 2rem));
+		padding: 0.75rem 1rem;
+		border-radius: 0.5rem;
+		background: #7f1d1d;
+		color: #fff;
+		font:
+			600 1rem/1.4 system-ui,
+			sans-serif;
+	}
+
 	canvas {
 		display: block;
 		width: 100vw;

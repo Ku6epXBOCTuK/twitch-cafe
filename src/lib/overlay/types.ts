@@ -6,6 +6,7 @@ export interface IncomingOrder {
 	id: string;
 	dishes: string[];
 	strictness: number;
+	strictnessStars: number;
 	/** срок выполнения, epoch ms */
 	deadline: number;
 }

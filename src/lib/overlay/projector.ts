@@ -40,6 +40,9 @@ function projectIncoming(
 			id: order.id,
 			dishes: order.items.map((entry) => entry.item.name),
 			strictness: order.customer.strictness,
+			strictnessStars: Math.round(
+				Math.min(1, Math.max(0, order.customer.strictness)) * 5,
+			),
 			deadline: deadlineOf(order),
 		});
 	});

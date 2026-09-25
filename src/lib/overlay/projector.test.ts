@@ -68,6 +68,7 @@ describe("projectSnapshot: incoming", () => {
 				id: "o1",
 				dishes: ["Бургер"],
 				strictness: 0.2,
+				strictnessStars: 1,
 				deadline: INCOMING_DEADLINE_MS,
 			},
 			{
@@ -75,8 +76,21 @@ describe("projectSnapshot: incoming", () => {
 				id: "o2",
 				dishes: ["Кола", "Кола"],
 				strictness: 0.9,
+				strictnessStars: 5,
 				deadline: INCOMING_DEADLINE_MS,
 			},
+		]);
+	});
+
+	it("нормализует strictness в диапазон 0..5", () => {
+		const low = order("low", [burger]);
+		low.customer.strictness = -1;
+		const high = order("high", [burger]);
+		high.customer.strictness = 2;
+		const result = projectSnapshot(snapshot([low, high]));
+
+		expect(result.incoming.map((entry) => entry.strictnessStars)).toEqual([
+			0, 5,
 		]);
 	});
 
@@ -90,6 +104,7 @@ describe("projectSnapshot: incoming", () => {
 				id: "o2",
 				dishes: ["Кола"],
 				strictness: 0.5,
+				strictnessStars: 3,
 				deadline: INCOMING_DEADLINE_MS,
 			},
 		]);

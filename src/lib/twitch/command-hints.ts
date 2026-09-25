@@ -14,9 +14,9 @@ export interface CommandHint {
 /** Порядок — сценарий игры: взял заказ → собрал → запечатал → отдал. */
 export const COMMAND_HINTS: readonly CommandHint[] = [
 	{ usage: "!взять 1-3", description: "взять заказ из слота" },
-	{ usage: "!положи X", description: "добавть ингридиент в блюдо" },
-	{ usage: "!дальше", description: "положить блюдо в пакет(?)" },
-	{ usage: "!отдать", description: "отдать пакет с заказом" },
+	{ usage: "!положи X", description: "добавить ингредиент в блюдо" },
+	{ usage: "!дальше", description: "запечатать блюдо и очистить поднос" },
+	{ usage: "!отдать", description: "отдать заказ" },
 	{ usage: "!заказ", description: "мой заказ и поднос" },
 	{ usage: "!мусор", description: "выбросить поднос в мусорку" },
 	{ usage: "!рецепт X", description: "показать рецепт блюда" },
