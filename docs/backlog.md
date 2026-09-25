@@ -197,13 +197,13 @@
 
 ### B14 — Подготовить OBS и production-запуск
 
-- **Статус:** `[ ]`
+- **Статус:** `[x]`
 - **Приоритет:** P2
 - **Сложность:** medium
-- **Сделать:** определить число и расположение Browser Sources, проверить
-  `.env.example`, production-скрипт, порт и запуск `pnpm build` на Node.
-- **Текущий блокер:** в `hooks.server.ts` отсутствие Twitch-переменных завершает
-  процесс, поэтому overlay-only режим без credentials пока не определён.
+- **Сделано:** добавлен `pnpm start`, настроены `HOST`/`PORT`, описан один OBS
+  Browser Source на `/`; production smoke-тест с credentials пройден.
+- **Проверка:** запуск с Twitch credentials и подключение Browser Source
+  подтверждены; fail-fast при их отсутствии сохранён.
 
 ### B15 — Завершить Effect-only миграцию production-контрактов
 
