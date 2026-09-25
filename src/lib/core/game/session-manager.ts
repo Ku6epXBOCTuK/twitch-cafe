@@ -188,6 +188,9 @@ export class SessionManager {
 				if (this.running) return;
 				const scope = this.ensureSessionScope();
 				this.startSimEventConsumer();
+				if (this.port) {
+					yield* Scope.provide(scope)(this.port.startEffect());
+				}
 				yield* Scope.provide(scope)(this.incomingOrders.startEffect());
 				this.running = true;
 			}.bind(this),
@@ -225,6 +228,7 @@ export class SessionManager {
 				if (timeoutFibers.length > 0) {
 					yield* Fiber.interruptAll(timeoutFibers);
 				}
+				if (this.port) yield* this.port.stopEffect();
 				yield* this.incomingOrders.stopEffect();
 
 				const scope = this.sessionScope;

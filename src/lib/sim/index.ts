@@ -1,6 +1,8 @@
 export { StubSim } from "./stub";
 export type { StubSimOptions } from "./stub";
-export { connectSim } from "./sync";
+export { connectMiniplexSim, connectSim } from "./sync";
+export { MiniplexSim } from "./simulation";
+export type { MiniplexSimOptions } from "./simulation";
 export { SIM_EVENT_TYPE } from "../core/game/sim-dto";
 export {
 	makeSimEventQueue,

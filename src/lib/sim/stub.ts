@@ -37,6 +37,18 @@ export class StubSim implements ISimPort {
 		private readonly options: StubSimOptions,
 	) {}
 
+	startEffect(): Effect.Effect<void> {
+		return Effect.void;
+	}
+
+	stopEffect(): Effect.Effect<void> {
+		return Effect.void;
+	}
+
+	tick(_deltaMs: number): Effect.Effect<void> {
+		return Effect.void;
+	}
+
 	startOrder(username: string, order: IOrder): void {
 		this.players.set(username, {
 			username,

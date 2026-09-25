@@ -10,7 +10,7 @@ import {
 	Scope,
 	Stream,
 } from "effect";
-import { connectSim } from "../../sim/sync";
+import { connectMiniplexSim } from "../../sim/sync";
 import { DEFAULT_GAME_CONFIG, GameConfig } from "./game-config";
 import { SessionManager } from "./session-manager";
 import type { ISimPort } from "./sim-port";
@@ -54,7 +54,7 @@ export function makeGameRuntime(
 	config: GameConfig = DEFAULT_GAME_CONFIG,
 ): GameRuntime {
 	const sessionManager = new SessionManager(undefined, config);
-	const port = connectSim(sessionManager);
+	const port = connectMiniplexSim(sessionManager);
 	const eventBus = Effect.runSync(
 		PubSub.sliding<SessionChangedEvent>({
 			capacity: SESSION_EVENT_BUFFER_SIZE,

@@ -27,6 +27,18 @@ export class RecordingPort implements ISimPort {
 
 	constructor(readonly eventQueue: SimEventQueue = makeSimEventQueue()) {}
 
+	startEffect(): Effect.Effect<void> {
+		return Effect.void;
+	}
+
+	stopEffect(): Effect.Effect<void> {
+		return Effect.void;
+	}
+
+	tick(_deltaMs: number): Effect.Effect<void> {
+		return Effect.void;
+	}
+
 	startOrder(username: string, order: IOrder): void {
 		this.startOrders.push(order);
 		this.orderIds.set(username, order.id);

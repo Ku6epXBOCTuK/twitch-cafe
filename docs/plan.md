@@ -65,8 +65,8 @@
 | Взятие и multi-dish flow | Работает          | Effect-операции `takeOrderEffect`/`nextDishEffect`, sealed/current dishes и `!next`; terminal state изолирован.   |
 | Оценка                   | Работает частично | Есть missing/extra/order issues, rating, verdict и XP; дубликаты ингредиентов пока не учитываются как количества. |
 | Команды Twitch           | Работает          | Есть русские/английские алиасы, Effect-boundary, `GameEvent`, correlation id и сценарии чата.                     |
-| SIM-шов                  | Работает          | `ISimPort`, bounded event queue и `StubSim` реализуют мгновенный игровой цикл.                                    |
-| Настоящий SIM            | Не реализован     | `miniplex` установлен, но мир, тик и движение не подключены.                                                      |
+| SIM-шов                  | Работает          | `ISimPort`, bounded event queue, `MiniplexSim` и fallback `StubSim`; тик и движение подключены.                   |
+| Настоящий SIM            | Работает частично | Miniplex world, станции, персонажи, подносы, actions и snapshots работают; остаются сложные станции и физика.     |
 | Проекция и SSE           | Работает          | `GameRuntime.events` — bounded event stream; snapshot только для initial/replay, SSE без polling.                 |
 | Pixi overlay             | Работает частично | Есть сцена и мониторы; координаты игроков, звёзды, часть заголовков и lifecycle требуют доработки.                |
 | Тесты и проверки         | Работает          | Есть Vitest, Svelte check, ESLint, Prettier, `check:legacy`, fault-injection, soak и graceful-shutdown тесты.     |
@@ -93,11 +93,10 @@ PROJECTION  — projector, SSE и Pixi-визуализация
 
 ### SIM-шов
 
-`ISimPort` отделяет чат и правила от конкретной реализации движения. Сейчас
-`src/lib/sim/sync.ts` подключает `StubSim`: команды применяются мгновенно и
-возвращаются через bounded event queue с `ACTION_COMPLETED`. Настоящий
-miniplex-мир, `world.ts`, `simulation.ts` и системы движения остаются отдельной
-будущей задачей, а не частью текущего MVP.
+`ISimPort` отделяет чат и правила от конкретной реализации движения. Runtime
+подключает `MiniplexSim` через `src/lib/sim/sync.ts`: world entities, станции,
+персонажи, подносы, движение и действия тикаются в Effect-scope, а события идут
+через bounded event queue. `StubSim` остаётся fallback для изолированных тестов.
 
 ### PROJECTION
 

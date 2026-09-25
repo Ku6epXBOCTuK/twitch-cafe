@@ -1,4 +1,4 @@
-import { Data, Effect, Queue } from "effect";
+import { Data, Effect, Queue, Scope } from "effect";
 import type { IOrder } from "../types/order";
 import type { ITraySnapshot } from "../types/tray";
 import type {
@@ -30,6 +30,9 @@ export function makeSimEventQueue(
 
 export interface ISimPort {
 	readonly eventQueue: SimEventQueue;
+	startEffect(): Effect.Effect<void, never, Scope.Scope>;
+	stopEffect(): Effect.Effect<void>;
+	tick(deltaMs: number): Effect.Effect<void, SimQueueClosedError>;
 	startOrder(username: string, order: IOrder): void;
 	enqueueTask(
 		username: string,
